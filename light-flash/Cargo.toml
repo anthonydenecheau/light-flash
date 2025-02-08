@@ -19,6 +19,7 @@ opt-level = "z"
 
 [dependencies]
 log = { version = "0.4", default-features = false}
+wifi_ap = { path = "../common/lib/wifi_ap" }
 esp-idf-svc = { version = "=0.51"}
 esp-idf-hal = { version = "=0.45"}
 esp-idf-sys = { version = "0.36", default-features = false }
