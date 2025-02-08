@@ -9,3 +9,6 @@ esp-idf-svc = { version = "=0.51"}
 esp-idf-hal = { version = "=0.45"}
 esp-idf-sys = { version = "0.36", default-features = false }
 log         = "=0.4.22"
+
+[build-dependencies]
+embuild  = "=0.33.0"

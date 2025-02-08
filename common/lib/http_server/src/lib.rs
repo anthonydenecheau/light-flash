@@ -1,85 +1,83 @@
-use core::str;
 use embedded_svc::{
-    http::{Headers, Method}, 
+    http::{Headers, Method},
     io::{Read, Write},
 };
-use esp_idf_svc::eventloop::EspSystemEventLoop;
-use esp_idf_svc::hal::prelude::Peripherals;
-use esp_idf_svc::http::server::{Configuration,EspHttpServer};
-use anyhow::{bail, Result};
-use wifi::wifi;
-use serde::{Deserialize, Serialize};
+use esp_idf_svc::http::server::EspHttpServer;
+use serde::Deserialize;
+use log::info;
 
 // Max payload length
 const MAX_LEN: usize = 128;
+// Need lots of stack to parse JSON 
+const STACK_SIZE: usize = 10240;
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
-struct UserSettings {
-    wifi_ssid: &'static str,
-    wifi_psk: &'static str,
+static INDEX_HTML: &str = include_str!("./static/index.html");
+static LOGO: &[u8] = include_bytes!("logo.png");
+
+#[derive(Deserialize)]
+struct WifiSettings<'a> {
+    wifi_ssid: &'a str,
+    wifi_psk: &'a str,
 }
 
-fn main() -> Result<()> {
+pub fn start_http_server() -> anyhow::Result<EspHttpServer<'static>> {
 
-    esp_idf_svc::sys::link_patches();
-    esp_idf_svc::log::EspLogger::initialize_default();
+    info!("Create server...");
+    let mut server = create_server()?;
 
-    let peripherals = Peripherals::take().unwrap();
-    let sysloop = EspSystemEventLoop::take()?;
-
-    let mut server = EspHttpServer::new(&Configuration::default())?;
-
-    server.fn_handler("/", Method::Get, |request| {
-        let html = include_str!("./static/index.html");
-        let mut response = request.into_ok_response()?;
-        response.write_all(html.as_bytes());
-        Ok(())
+    info!("Routes definition...");
+    // Serve the HTML file
+    server.fn_handler("/", Method::Get, |req| {
+        req.into_ok_response()?
+            .write_all(INDEX_HTML.as_bytes())
+            .map(|_| ())
     })?;
 
-    server.fn_handler("/style.css", Method::Get, |request| {
-        let css = include_str!("./static/style.css");
-        let mut response = request.into_ok_response()?;
-        response.write_all(css.as_bytes());
-        Ok(())
+    // Serve the logo image
+    server.fn_handler("/logo.png", Method::Get, |req| {
+        req.into_ok_response()?
+            .write_all(LOGO)
+            .map(|_| ())        
     })?;
 
-    server.fn_handler("/connect", Method::Post, move |mut request| {
-        let len = request.content_len().unwrap_or(0) as usize;
+    server.fn_handler::<anyhow::Error, _>("/connect", Method::Post, |mut req| {
+        let len = req.content_len().unwrap_or(0) as usize;
+
         if len > MAX_LEN {
-            request.into_status_response(413)?
+            req.into_status_response(413)?
                 .write_all("Request too big".as_bytes())?;
             return Ok(());
         }
+
         let mut buf = vec![0; len];
-        request.read_exact(&mut buf)?;
-        let mut resp = request.into_ok_response()?;
-        if let Ok(form) = serde_json::from_slice::<UserSettings>(&buf) {
-            let ssid = form.wifi_ssid;
-            let password = form.wifi_psk;
+        req.read_exact(&mut buf)?;
+        let mut resp = req.into_ok_response()?;
 
-            println!("Connecting to SSID: {}, Password: {}", ssid, password);
-
-            // Connect to the Wi-Fi network
-            let _wifi = match wifi(
-                ssid,
-                password,
-                peripherals.modem,
-                sysloop,
-            ) {
-                Ok(inner) => inner,
-                Err(err) => {
-                    bail!("Could not connect to Wi-Fi network: {:?}", err)
-                }
-            };
-
+        if let Ok(form) = serde_json::from_slice::<WifiSettings>(&buf) {
+            info!("Credentials: {:?} {:?}", form.wifi_ssid, form.wifi_psk);
+            write!(
+                resp,
+                "SSID {}- Password {}!",
+                form.wifi_ssid, form.wifi_psk
+            )?;
+        } else {
+            resp.write_all("JSON error".as_bytes())?;
         }
 
-        let mut resp = request.into_ok_response()?;
-        resp.write_all(b"Connecting...")?;
-        resp.flush()?;
         Ok(())
     })?;
 
-    Ok(())    
+    // Main task no longer needed, free up some memory
+    info!("HTTP server started");
+    Ok(server)
 
+}
+
+fn create_server() -> anyhow::Result<EspHttpServer<'static>> {
+    let server_configuration = esp_idf_svc::http::server::Configuration {
+        stack_size: STACK_SIZE,
+        ..Default::default()
+    };
+
+    Ok(EspHttpServer::new(&server_configuration)?)
 }

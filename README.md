@@ -16,7 +16,7 @@ usbipd wsl attach --busid 1-3 -d Debian
 ```
 sudo chmod 777 /dev/ttyACM0
 sudo chmod 777 /dev/ttyACM1
-cargo run
+cargo cleab && cargo run
 ```
 
 ### BLE

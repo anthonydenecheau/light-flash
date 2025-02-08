@@ -7,6 +7,7 @@ use esp_idf_svc::netif::{EspNetif, NetifConfiguration, NetifStack};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
     hal::peripheral,
+    nvs::EspDefaultNvsPartition,
     wifi::{AccessPointConfiguration, AuthMethod, BlockingWifi, Configuration as WifiConfiguration, EspWifi, WifiDriver},
 };
 use esp_idf_svc::ipv4::{
@@ -29,13 +30,15 @@ pub fn start_access_point(
     sysloop: EspSystemEventLoop,    
 ) -> Result<Box<EspWifi<'static>>> {
 
+    let nvs = EspDefaultNvsPartition::take()?;
+
     if ssid.is_empty() {
         bail!("Missing WiFi name")
     }
     if pass.is_empty() {
         info!("Wifi password is empty");
     }
-    let wifi = WifiDriver::new(modem, sysloop.clone(), None)?;
+    let wifi = WifiDriver::new(modem, sysloop.clone(), Some(nvs))?;
     let mut esp_wifi = configure_wifi(wifi)?;
 
     let mut wifi = BlockingWifi::wrap(&mut esp_wifi, sysloop)?;

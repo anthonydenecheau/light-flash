@@ -5,18 +5,122 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Connect to WiFi</title>
-    <link rel="stylesheet" type="text/css" href="/style.css">
+    <style type="text/css">
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: url('/logo.png') no-repeat center center fixed;
+            background-size: cover;
+            height: 100vh;
+            margin: 0;
+        }
+    
+        .container {
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 90%;
+            max-width: 400px;
+        }
+    
+    
+        h1 {
+            color: #333333;
+        }
+    
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+    
+        input[type="text"],
+        input[type="password"] {
+            padding: 10px;
+            border: 1px solid #cccccc;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+    
+        input[type="submit"] {
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+        }
+    
+        input[type="submit"]:hover {
+            background-color: #45a049;
+        }
+    
+        /* Media queries for responsiveness */
+        @media (max-width: 600px) {
+            .container {
+                padding: 15px;
+            }
+    
+            input[type="text"],
+            input[type="password"] {
+                padding: 8px;
+            }
+    
+            input[type="submit"] {
+                padding: 8px;
+            }
+        }
+    </style>
 </head>
 
 <body>
     <div class="container">
         <h1>Connect to WiFi</h1>
-        <form action="/connect" method="post">
-            SSID: <input type="text" name="ssid"><br>
-            Password: <input type="password" name="password"><br>
+        <form id="the-form" action="/connect" method="post">
+            SSID: <input type="text" id="wifi_ssid" name="wifi_ssid"><br>
+            Password: <input type="password" id="wifi_psk" name="wifi_psk"><br>
             <input type="submit" value="Connect">
         </form>
     </div>
+    <p id="server-resp"></p>
+    <script type="text/javascript">
+
+        let theForm = document.getElementById("the-form");
+        let serverResp = document.getElementById("server-resp");
+
+        theForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            let form = e.currentTarget;
+            let url = form.action;
+
+            try {
+                let entries = Object.fromEntries(new FormData(form).entries());
+                //entries["age"] = parseInt(entries["age"]);
+                let resp = await fetch(url, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Accept: "application/json",
+                    },
+                    body: JSON.stringify(entries),
+                });
+                serverResp.innerText = await resp.text();
+            } catch (err) {
+                console.error(err);
+            }
+        });
+
+    </script>
 </body>
 
 </html>
