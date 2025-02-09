@@ -10,13 +10,13 @@ cargo build
 ```
 usbipd wsl list
 usbipd wsl attach --busid <busid>
-usbipd wsl attach --busid 1-3 -d Debian
-```
+usbipd wsl attach --busid 2-3 -d Debian
+```     lsub
 #### WLS2
 ```
 sudo chmod 777 /dev/ttyACM0
 sudo chmod 777 /dev/ttyACM1
-cargo cleab && cargo run
+cargo clean && cargo run
 ```
 
 ### BLE

@@ -1,8 +1,9 @@
 use wifi_ap::start_access_point;
 use http_server::start_http_server;
-use anyhow::{bail, Result};
+use rgb_led::{RGB8, WS2812RMT};
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::hal::prelude::Peripherals;
+use anyhow::{bail, Result};
 use log::info;
 use std::sync::Arc;
 use std::thread;
@@ -14,15 +15,14 @@ fn main() -> Result<()> {
     let peripherals = Peripherals::take().unwrap();
     let sysloop = EspSystemEventLoop::take()?;
 
+    let mut led = WS2812RMT::new(peripherals.pins.gpio2, peripherals.rmt.channel0)?;
+    led.set_pixel(RGB8::new(50, 50, 0))?;    
     info!("Hello, world!");
 
     info!("Warming up WIFI AP !");
     let _wifi = match start_access_point(
-        "MyRustAP",
-        "password123",
         peripherals.modem,
-        sysloop,
-    ) {
+        sysloop,) {
         Ok(inner) => inner,
         Err(err) => {
             bail!("Could not start Wi-Fi access point : {:?}", err)
