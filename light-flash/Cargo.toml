@@ -24,7 +24,6 @@ wifi_ap = { path = "../common/lib/wifi_ap" }
 http_server = { path = "../common/lib/http_server" }
 esp-idf-svc = { version = "=0.51"}
 esp-idf-hal = { version = "=0.45"}
-esp32-nimble = "0.10.0"
 anyhow = "=1.0.95"
 heapless ="0.8.0"
 
