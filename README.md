@@ -19,5 +19,7 @@ sudo chmod 777 /dev/ttyACM1
 cargo clean && cargo run
 ```
 
-### BLE
-https://github.com/apollolabsdev/ESP32C3/tree/main
+```
+DHCP server started on interface WIFI_AP_DEF with IP: 192.168.71.1
+http://192.168.71.1/
+```
