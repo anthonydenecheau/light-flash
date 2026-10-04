@@ -8,6 +8,11 @@ rust-version.workspace = true
 name = "light-flash"
 harness = false # pas de harness libtest en cross-compilation
 
+[features]
+# Points d'entrée HTTP de test (/api/debug/*) : utilisables en release, jamais dans une image
+# publiée. `make flash FEATURES=debug-hooks`.
+debug-hooks = []
+
 [dependencies]
 anyhow.workspace = true
 log.workspace = true

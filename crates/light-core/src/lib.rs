@@ -19,6 +19,8 @@ pub mod persist;
 pub mod power;
 pub mod reconnect;
 pub mod render;
+pub mod scenes;
+pub mod schedule;
 pub mod state;
 pub mod status;
 pub mod version;

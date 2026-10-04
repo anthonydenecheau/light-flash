@@ -46,8 +46,14 @@ improv      = { path = "crates/improv" }
 
 # Les profils ne sont pris en compte qu'à la racine du workspace.
 [profile.release]
-opt-level = "s"
+opt-level     = "s"
+lto           = "fat"
+codegen-units = 1
 
 [profile.dev]
-debug     = true # les symboles n'augmentent pas la taille en flash
-opt-level = "z"
+debug         = true # les symboles n'augmentent pas la taille en flash
+opt-level     = "z"
+# L'image debug dépasse sinon l'emplacement OTA (1,94 Mo) : LTO complet et une seule unité de
+# génération de code, comme en release.
+lto           = "fat"
+codegen-units = 1

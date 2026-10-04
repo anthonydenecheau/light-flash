@@ -1,7 +1,7 @@
 # light-flash — Manuel utilisateur
 
-Version du 2026-10-04. Ce manuel s'enrichira de deux chapitres : l'utilisation de l'interface
-(chapitre 2) et la résolution des problèmes (chapitre 3).
+Version du 2026-10-04. Ce manuel s'enrichira d'un chapitre de résolution des problèmes
+(chapitre 3).
 
 > Stade actuel : la lampe est encore un prototype. La lumière est produite par la LED de la carte
 > électronique ; le ruban de 144 LED sera raccordé ensuite. Les étapes ci-dessous resteront les
@@ -133,7 +133,14 @@ ajoutée à l'écran d'accueil pour s'ouvrir comme une application (§1.4).
 
 Le logo, le nom de la lampe et sa situation : point vert « En ligne sur <réseau> », point orange
 « Point d'accès de secours », point gris « Connexion au Wi-Fi… » ou « Lampe injoignable » si la
-page ne reçoit plus de réponse.
+page ne reçoit plus de réponse. À droite, deux boutons ronds ouvrent des fenêtres qui se
+referment d'un toucher sur la croix ou en dehors :
+
+- **Les barres de signal** (ou la ligne de situation) ouvrent la fenêtre *Réseau* (§2.3). Quatre
+  barres vertes : excellent signal ; aucune : lampe sur son réseau de secours ou signal inconnu.
+- **La flèche** ouvre la fenêtre *Mises à jour* (§2.6). Une pastille colorée sur le bouton
+  signale qu'une nouvelle version est disponible ; la flèche tourne pendant une vérification ou
+  une installation.
 
 ### 2.2 Lumière
 
@@ -150,8 +157,9 @@ toutes les quelques secondes.
 
 ### 2.3 Réseau
 
-Le réseau Wi-Fi actuel, la qualité du signal (quatre barres = excellent), l'adresse de la lampe
-et ses adresses faciles à retenir (`nom.local`, `nom`).
+Fenêtre ouverte depuis l'en-tête (§2.1) : le réseau Wi-Fi actuel, la qualité du signal (quatre
+barres = excellent), l'adresse de la lampe, ses adresses faciles à retenir (`nom.local`, `nom`)
+et les autres lampes découvertes (§2.5).
 
 - **Changer de réseau Wi-Fi** : déplier, saisir le nouveau réseau et son mot de passe,
   *Enregistrer et redémarrer*. La lampe redémarre sur le nouveau réseau. Si elle ne le trouve pas,
@@ -184,19 +192,25 @@ Dès qu'une autre lampe est connue, un sélecteur apparaît en haut de la carte 
 - **Toutes les lampes** : chaque réglage (allumer, couleur, luminosité, effet) est envoyé en même
   temps à toutes les lampes découvertes. Si l'une ne répond pas, un message le signale.
 
-La découverte prend jusqu'à une minute après l'allumage d'une lampe. Pour des scènes, des
-programmations ou un pilotage à la voix, utilisez un groupe de lumières dans Home Assistant.
+La découverte prend jusqu'à une minute après l'allumage d'une lampe. Avec « Toutes les lampes »,
+toucher une scène (§2.7) l'applique aussi à toutes ; les horaires (§2.8), eux, se règlent sur
+chaque lampe. Pour un pilotage à la voix, utilisez un groupe de lumières dans Home Assistant.
 
 ### 2.6 Mettre à jour la lampe
 
 Les nouvelles versions du logiciel de la lampe se distribuent depuis un petit serveur de fichiers
-de la maison (un ordinateur ou un NAS), sans câble. Une seule fois, dans la carte *Mises à jour*,
-saisir l'adresse de ce serveur, par exemple `http://192.168.1.30:8000`, et *Enregistrer*.
+de la maison (un ordinateur ou un NAS), sans câble. Une seule fois, ouvrez la fenêtre *Mises à
+jour* (la flèche de l'en-tête, §2.1), saisissez l'adresse de ce serveur, par exemple
+`http://192.168.1.30:8000`, et *Enregistrer* : la lampe vérifie aussitôt.
 
-Ensuite, la lampe vérifie toute seule au démarrage puis toutes les six heures, et à chaque fois
-que vous appuyez sur *Vérifier maintenant*. Quand une version plus récente est publiée, un
-bandeau coloré apparaît en haut de la page : « Mise à jour x.y.z disponible », avec le
-descriptif. Appuyez sur **Mettre à jour**, confirmez : la barre de progression suit le
+La fenêtre indique la version installée et, dans un encadré, où en est la lampe : « La lampe est à
+jour », « Mise à jour x.y.z disponible », « Vérification impossible » avec la raison (serveur
+éteint, adresse erronée) ou « Aucun serveur de mises à jour ». Ensuite, la lampe vérifie toute
+seule au démarrage puis toutes les six heures, et à chaque fois que vous appuyez sur *Vérifier
+maintenant* ; au bout de quelques secondes un message annonce le résultat, y compris quand il n'y
+a rien de nouveau : « Aucune mise à jour : la lampe est à jour ». Quand une version plus récente
+est publiée, une pastille apparaît sur la flèche de l'en-tête et un bandeau coloré en haut de la
+page : « Mise à jour x.y.z disponible », avec le descriptif. Appuyez sur **Mettre à jour**, confirmez : la barre de progression suit le
 téléchargement, puis la lampe vérifie l'image reçue et redémarre. Comptez une minute ; la lampe
 continue d'éclairer pendant le téléchargement et s'éteint le temps du redémarrage. La page se
 reconnecte d'elle-même et affiche la nouvelle version.
@@ -204,6 +218,47 @@ reconnecte d'elle-même et affiche la nouvelle version.
 Si quelque chose se passe mal pendant la mise à jour (coupure du Wi-Fi, fichier abîmé), rien
 n'est perdu : la lampe garde la version précédente et le bandeau propose de réessayer. Si une
 nouvelle version ne parvient pas à démarrer, la lampe revient d'elle-même à l'ancienne.
+
+### 2.7 Scènes
+
+Une scène est un réglage complet, couleur, luminosité et effet, mémorisé sous un nom et rappelé
+d'un geste. La lampe en propose quatre au départ : *Lecture*, *Soirée*, *Veilleuse* et *Fête*.
+Dans la carte *Scènes* :
+
+- **Toucher une scène** l'applique et allume la lampe. Avec « Toutes les lampes » (§2.5), elle
+  est envoyée à toutes les lampes découvertes.
+- **Créer une scène** : réglez la lumière à votre goût dans la carte *Lumière*, saisissez un nom
+  (24 caractères au plus) et touchez *Mémoriser*. Un nom déjà utilisé remplace la scène
+  existante, ce qui permet de la retoucher. Huit scènes au maximum.
+- **Supprimer** : la croix à droite du nom, après confirmation. Une scène utilisée par un
+  horaire ne peut pas être supprimée tant que l'horaire existe.
+
+Les scènes sont propres à chaque lampe et conservées quand elle est débranchée.
+
+### 2.8 Programmation
+
+La carte *Programmation* regroupe la minuterie, les horaires et le fuseau horaire.
+
+**Minuterie d'extinction.** *15 min*, *30 min* ou *1 h* : la lampe s'éteint d'elle-même à
+l'échéance, le temps restant s'affiche en face de « Minuterie d'extinction », *Annuler* l'arrête.
+La minuterie est oubliée si la lampe est débranchée.
+
+**Horaires.** La lampe peut, à heure fixe et certains jours de la semaine, s'allumer, s'éteindre
+ou appliquer une scène : par exemple *Lecture* en semaine à 7 h 30 et extinction tous les jours à
+23 h. Dépliez *Ajouter un horaire*, touchez les jours voulus (en couleur quand ils sont
+sélectionnés), choisissez l'heure et l'action, puis *Ajouter*. Dans la liste, la case à gauche
+suspend un horaire sans le supprimer, la croix le supprime. Huit horaires au maximum.
+
+Les horaires ont besoin de l'heure. La lampe la reçoit d'Internet par le Wi-Fi de la maison dans
+la minute qui suit sa connexion ; l'heure courante s'affiche en face de « Horaires ». Si vous
+lisez « heure non reçue », la lampe n'a pas accès à Internet (point d'accès de secours, box
+coupée) : les horaires ne se déclenchent pas, la minuterie fonctionne toujours. Un horaire
+survenu pendant que la lampe était débranchée n'est pas rattrapé au rallumage.
+
+**Fuseau horaire.** Réglé d'avance sur la France métropolitaine, changement d'heure compris.
+Ailleurs : dépliez *Fuseau horaire*, choisissez la région puis *Enregistrer*. Pour un fuseau
+absent de la liste, saisissez sa chaîne POSIX, que l'on trouve par exemple dans
+https://github.com/nayarsystems/posix_tz_db/blob/master/zones.csv (colonne de droite).
 
 ## 3. Résolution des problèmes
 

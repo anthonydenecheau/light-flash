@@ -34,14 +34,14 @@ d'ESP-IDF, versions communes dans `[workspace.dependencies]`, `Cargo.lock` commi
 
 | Chemin | Type | Rôle |
 |---|---|---|
-| `firmware/light-flash/` | binaire | Firmware principal : tâche lumière (`light_task.rs`, 50 images/s, seule à parler au driver, rend les indications système si présentes), thread de persistance (`persistence.rs`, NVS après 2 s de calme), thread réseau (`network.rs` : possède le driver Wi-Fi, reconnexion avec backoff, repli point d'accès `light-flash` après 90 s, nouvel essai station toutes les 2 min, commandes `Connect` du provisioning), thread de provisioning (`provisioning.rs` : possède NimBLE, service Improv, bouton BOOT, reset usine), mDNS, serveur HTTP démarré avant le réseau. Démarre dans le dernier état enregistré, sinon allumée en blanc chaud. |
+| `firmware/light-flash/` | binaire | Firmware principal : tâche lumière (`light_task.rs`, 50 images/s, seule à parler au driver, rend les indications système si présentes), thread de persistance (`persistence.rs`, NVS après 2 s de calme), thread réseau (`network.rs` : possède le driver Wi-Fi, reconnexion avec backoff, repli point d'accès `light-flash` après 90 s, nouvel essai station toutes les 2 min, commandes `Connect` du provisioning), thread de provisioning (`provisioning.rs` : possède NimBLE, service Improv, bouton BOOT, reset usine), mDNS, serveur HTTP démarré avant le réseau, mise à jour OTA (`update.rs`), scènes et programmation (`automation.rs` : SNTP, fuseau POSIX, minuterie, horaires ; `tick` appelé chaque seconde par la boucle principale, pas de thread). Démarre dans le dernier état enregistré, sinon allumée en blanc chaud. |
 | `firmware/hardware-check/` | binaire | Test de la carte : Wi-Fi STA + clignotement LED bleu/vert (rouge si échec Wi-Fi). |
-| `crates/light-core/` | lib | Domaine **sans dépendance ESP** : `LightState` (+ `to_bytes`/`from_bytes` versionnés, `Display`), `LightCommand`, `Effect`, `Renderer`, `Gamma`, `power::limit` (plafond de courant), `api::{LightView, LightPatch}` (JSON), `persist::SaveScheduler` (écriture différée), `reconnect::Policy` (reconnexion Wi-Fi), `status::Indication` (signalisation lumineuse), `button::ButtonTracker` (appui court/long), `SharedState`, `SharedIndication`. Testé sur l'hôte. |
+| `crates/light-core/` | lib | Domaine **sans dépendance ESP** : `LightState` (+ `to_bytes`/`from_bytes` versionnés, `Display`), `LightCommand`, `Effect`, `Renderer`, `Gamma`, `power::limit` (plafond de courant), `api::{LightView, LightPatch}` (JSON), `persist::SaveScheduler` (écriture différée), `reconnect::Policy` (reconnexion Wi-Fi), `status::Indication` (signalisation lumineuse), `button::ButtonTracker` (appui court/long), `scenes::{Scene, SceneList}` (8 scènes, JSON), `schedule::{Schedule, Entry, Runner, SleepTimer}` (horaires hebdomadaires évalués sur une `LocalTime` injectée, minuterie), `SharedState`, `SharedIndication`. Testé sur l'hôte. |
 | `crates/improv/` | lib | Protocole Improv Wi-Fi BLE **sans dépendance ESP** : UUID, paquets RPC (checksum), `Machine` (autorisation, provisioning, résultat). Testé sur l'hôte. |
 | `crates/rgb-led/` | lib | Driver WS2812 via RMT (API `rmt-legacy`), N pixels (`set_pixels`), impulsions précalculées. |
 | `crates/wifi/` | lib | Wi-Fi bloquant sur un driver réutilisable : `connect_sta` (15 s max) et `start_access_point`, plus le raccourci `wifi()` pour `hardware-check`. |
-| `crates/storage/` | lib | NVS (espace `light`) : identifiants Wi-Fi, dernier état de la lampe (`light_state`, 7 octets versionnés), nom de la lampe ; `factory_reset` ; `SharedStorage` + `storage::lock`. |
-| `crates/http-server/` | lib | `GET /` page de pilotage (HTML + CSS + JS vanilla en français, logo en data URI, **gzip préparé par `build.rs`**, ~10 Ko servis), `/icon-192.png`, `/manifest.json` (écran d'accueil), `GET /api/status` (`StatusView`), `GET /api/peers` (`PeerView`, mode groupe), `GET/POST /api/light` (`LightView` / `LightPatch`), `POST /connect`, `POST /api/name`, `POST /api/system/{restart,forget-wifi,ble}` (`SystemHooks`), et en build debug `DebugHooks` (`/api/debug/wifi-disconnect`, `improv-authorize`, `ble-off`). Tout est passé via `HttpContext` ; CORS `*` sur les réponses JSON. |
+| `crates/storage/` | lib | NVS (espace `light`) : identifiants Wi-Fi, dernier état de la lampe (`light_state`, 7 octets versionnés), nom de la lampe, serveur de mises à jour, documents JSON (`scenes`, `schedule`, `tz`, 3 900 octets max chacun via `json`/`set_json`) ; `factory_reset` ; `SharedStorage` + `storage::lock`. |
+| `crates/http-server/` | lib | `GET /` page de pilotage (HTML + CSS + JS vanilla en français, logo en data URI, **gzip préparé par `build.rs`**, ~17 Ko servis), `/icon-192.png`, `/manifest.json` (écran d'accueil), `GET /api/status` (`StatusView`), `GET /api/peers` (`PeerView`, mode groupe), `GET/POST /api/light` (`LightView` / `LightPatch`), `POST /connect`, `POST /api/name`, `POST /api/system/{restart,forget-wifi,ble}` (`SystemHooks`), `GET /api/update` + `POST /api/update/{check,install,url}` (`UpdateHooks`), `GET /api/automation` + `POST /api/scenes`, `/api/scenes/{apply,delete}`, `/api/schedule`, `/api/timer`, `/api/time` (trait `Automation`), et avec la feature `debug-hooks` du firmware `DebugHooks` (`/api/debug/wifi-disconnect`, `improv-authorize`, `ble-off`). Tout est passé via `HttpContext` ; CORS `*` sur les réponses JSON ; corps JSON limités à 1 Ko. |
 
 Fichiers racine : `Cargo.toml` (membres, versions, profils), `.cargo/config.toml` (cible, `ldproxy`,
 runner `espflash`, `ESP_IDF_VERSION`), `rust-toolchain.toml`, `sdkconfig.defaults` (commun à tous
@@ -194,14 +194,22 @@ Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puc
   minimal sur `TcpStream` (pas le client ESP-IDF, qui entraîne mbedTLS : 300 Ko), écriture en
   flux via `EspOta`, SHA-256 (`sha2`) et taille vérifiés, redémarrage ; `main` confirme l'image
   (`mark_running_slot_valid`) dès que le réseau est opérationnel. Les tailles d'image sont le
-  point de vigilance : debug 1,98 Mo pour 2,03 Mo d'emplacement (49 Ko de marge), release
-  1,71 Mo ; `CONFIG_COMPILER_OPTIMIZATION_SIZE`, pas de bundle de certificats, pas de WPA2
-  Entreprise ni d'IPv6. Si debug ne tient plus : `make run RELEASE=1` (sans les hooks de debug)
-  ou trouver d'autres réductions avant d'ajouter du code. Vérifié le 2026-10-04 : 0.2.0 → 0.2.1
+  point de vigilance : les deux profils sont en LTO complet, une unité de génération de code,
+  `opt-level` z (dev) ou s (release) ; debug ≈ 1,73 Mo pour 2,03 Mo d'emplacement, release
+  ≈ 1,65 Mo ; `CONFIG_COMPILER_OPTIMIZATION_SIZE`, pas de bundle de certificats, pas de WPA2
+  Entreprise ni d'IPv6. Éviter `#[serde(flatten)]` (plusieurs dizaines de Ko de code sur la
+  cible). Les points d'entrée de debug sont derrière la feature `debug-hooks`
+  (`make run RELEASE=1 FEATURES=debug-hooks` pour tester en release). **Piège :** le câble écrit
+  toujours `ota_0` ; après une mise à jour OTA (image active en `ota_1`), un `make flash` seul
+  laisserait démarrer l'ancienne image, d'où l'effacement d'`otadata` dans la cible `flash`
+  (`espflash erase-parts otadata`). Vérifié le 2026-10-04 : 0.2.0 → 0.2.1
   en 29 s, redémarrage sur `ota_1`, confirmation, « firmware à jour ».
 - Page de pilotage : un seul fichier `crates/http-server/src/static/index.html`, placeholder
-  `__LOGO__` remplacé par `build.rs` (data URI de `logo-160.jpg`) puis gzippé ; `make build`
-  suffit après modification. Rendu vérifié avec Chrome sans tête :
+  `__LOGO__` remplacé par `build.rs` (data URI de `logo-160.jpg`) puis gzippé (≈ 17 Ko servis) ;
+  `make build` suffit après modification. Cartes Lumière, Scènes, Programmation, Lampe ; Réseau
+  et Mises à jour sont deux `<dialog>` (feuille en bas sur mobile, centrée au-delà de 600 px)
+  ouverts par les boutons de l'en-tête. « Vérifier maintenant » attend la fin de la vérification
+  (changement de `last_check_s`) pour annoncer le résultat, y compris « à jour ». Rendu vérifié avec Chrome sans tête :
   `google-chrome --headless=new --screenshot=... --window-size=420,1180 --virtual-time-budget=8000
   [--force-dark-mode] http://<nom>.local/` (ne pas utiliser `WebContentsForceDark`, qui inverse
   les couleurs au lieu d'honorer `prefers-color-scheme`). Source du logo : `assets/logo-1024.jpg`.
@@ -220,10 +228,21 @@ Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puc
 - Réseau : seul le thread `network` touche au driver Wi-Fi. La logique de décision est dans
   `light_core::reconnect::Policy` (testée sur l'hôte) ; `network.rs` ne fait qu'exécuter les
   actions (`connect_sta`, `start_access_point`) et journaliser. Pour tester la reconnexion sans
-  couper la box : `curl -X POST http://<ip>/api/debug/wifi-disconnect` (build debug).
+  couper la box : `curl -X POST http://<ip>/api/debug/wifi-disconnect` (firmware compilé avec `FEATURES=debug-hooks`).
 - Tester l'API depuis le PC : la lampe en station sur le réseau domestique (adresse dans le
   journal), puis `curl http://<ip>/api/light` ; en mode point d'accès le PC devrait quitter son
   propre Wi-Fi, préférer le téléphone.
 - La première carte avait une LED embarquée défectueuse (remplacée le 2026-10-04 par une carte
   identique). Les exemples `led_probe` et `led_probe_original` de `rgb-led` servent de diagnostic
   si le doute revient.
+- **Scènes et programmation** : `automation.rs` charge `scenes`/`schedule`/`tz` (JSON en NVS,
+  valeurs par défaut sinon : 4 scènes, pas d'horaire, `CET-1CEST,M3.5.0,M10.5.0/3`), applique le
+  fuseau par `setenv("TZ")` + `tzset`, démarre `EspSntp` dès que la station est connectée
+  (`pool.ntp.org`, resynchronisation horaire) et, à chaque `tick` (1 s depuis `main`), lit
+  `time()`/`localtime_r` (heure considérée reçue si epoch > 1,7 G), évalue `schedule::Runner`
+  (une fois par minute, pas de rattrapage) et `SleepTimer`, puis applique les commandes à
+  `SharedState`. Les scènes sont appliquées par la page via `POST /api/light` (donc aussi en mode
+  groupe) ; `POST /api/scenes` sans couleur/luminosité/effet mémorise l'état courant. Supprimer
+  une scène référencée par un horaire est refusé. Vérifié sur carte le 2026-10-04 : heure reçue
+  14 s après le démarrage, UTC0 ↔ Paris, minuterie 1 min, horaire « scène 2 » à l'heure dite,
+  scène conservée après reflash.

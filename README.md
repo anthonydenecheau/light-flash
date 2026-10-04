@@ -22,11 +22,11 @@ cfg.toml.example          modèle d'identifiants Wi-Fi, à copier en cfg.toml (i
 Makefile                  point d'entrée unique de toutes les commandes
 firmware/light-flash      firmware principal
 firmware/hardware-check   test de la carte : Wi-Fi + LED embarquée
-crates/light-core         domaine (état, commandes, rendu, puissance, API JSON), sans dépendance ESP
+crates/light-core         domaine (état, commandes, rendu, puissance, API JSON, scènes, horaires), sans dépendance ESP
 crates/rgb-led            driver WS2812 via RMT (N pixels)
 crates/wifi               Wi-Fi station ou point d'accès
-crates/storage            NVS : identifiants Wi-Fi
-crates/http-server        page de pilotage, API JSON, formulaire Wi-Fi
+crates/storage            NVS : identifiants Wi-Fi, état, nom, scènes, horaires, fuseau
+crates/http-server        page de pilotage (lumière, scènes, programmation, réseau, mises à jour), API JSON
 ```
 
 ## Démarrage (Ubuntu)

@@ -13,6 +13,12 @@ const KEY_STATE: &str = "light_state";
 const KEY_NAME: &str = "name";
 const KEY_UPDATE_URL: &str = "update_url";
 pub const UPDATE_URL_MAX: usize = 128;
+/// Clés des documents JSON (une chaîne NVS fait au plus 4000 octets).
+pub const KEY_SCENES: &str = "scenes";
+pub const KEY_SCHEDULE: &str = "schedule";
+pub const KEY_TIMEZONE: &str = "tz";
+const JSON_KEYS: [&str; 3] = [KEY_SCENES, KEY_SCHEDULE, KEY_TIMEZONE];
+const JSON_MAX: usize = 3900;
 
 /// Stockage partagé entre threads (HTTP, persistance).
 pub type SharedStorage = Arc<Mutex<Storage>>;
@@ -148,12 +154,34 @@ impl Storage {
         Ok(())
     }
 
-    /// Réinitialisation d'usine : identifiants Wi-Fi, état, nom et serveur de mises à jour effacés.
+    /// Document JSON (scènes, programme, fuseau) ; `None` si absent.
+    pub fn json(&self, key: &str) -> Result<Option<String>> {
+        let mut buf = vec![0u8; JSON_MAX + 1];
+        Ok(self
+            .nvs
+            .get_str(key, &mut buf)?
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned))
+    }
+
+    pub fn set_json(&mut self, key: &str, value: &str) -> Result<()> {
+        if value.len() > JSON_MAX {
+            bail!("document trop long pour la NVS ({JSON_MAX} octets maximum)");
+        }
+        self.nvs.set_str(key, value)?;
+        Ok(())
+    }
+
+    /// Réinitialisation d'usine : identifiants Wi-Fi, état, nom, serveur de mises à jour,
+    /// scènes et programme effacés.
     pub fn factory_reset(&mut self) -> Result<()> {
         self.clear_wifi_credentials()?;
         self.nvs.remove(KEY_STATE)?;
         self.nvs.remove(KEY_NAME)?;
         self.nvs.remove(KEY_UPDATE_URL)?;
+        for key in JSON_KEYS {
+            self.nvs.remove(key)?;
+        }
         log::warn!("NVS effacée : réinitialisation d'usine");
         Ok(())
     }

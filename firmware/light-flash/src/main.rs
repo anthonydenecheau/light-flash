@@ -29,6 +29,7 @@ use std::{
 use storage::{Storage, WifiCredentials};
 use wifi::AccessPoint;
 
+mod automation;
 mod discovery;
 mod light_task;
 mod network;
@@ -224,7 +225,7 @@ fn main() -> Result<()> {
             })
         },
     };
-    let debug = cfg!(debug_assertions).then(|| {
+    let debug = cfg!(feature = "debug-hooks").then(|| {
         let disconnect = network.disconnect_flag();
         let authorize = provisioning.authorize_flag();
         let ble_off = provisioning.ble_off_flag();
@@ -239,6 +240,9 @@ fn main() -> Result<()> {
         .update_url()?
         .unwrap_or_else(|| CONFIG.update_url.trim_end_matches('/').to_owned());
     let update = update::spawn(storage.clone(), update_url, env!("CARGO_PKG_VERSION"), boot)?;
+    // Scènes, minuterie et horaires (heure par SNTP une fois connectée) ; évalués par la boucle
+    // principale, voir plus bas.
+    let automation = automation::start(storage.clone(), shared.clone(), boot)?;
     let update_hooks = UpdateHooks {
         status: {
             let update = update.clone();
@@ -294,21 +298,25 @@ fn main() -> Result<()> {
         peers: peers_view,
         system,
         update: update_hooks,
+        automation: Arc::new(automation.clone()),
         debug,
     })?;
 
-    // Après une mise à jour, l'image doit se confirmer une fois le réseau opérationnel ;
-    // sinon le bootloader reviendra à la précédente au prochain redémarrage.
+    // Boucle principale, une fois par seconde : minuterie et horaires ; après une mise à jour,
+    // l'image doit se confirmer une fois le réseau opérationnel, sinon le bootloader reviendra à
+    // la précédente au prochain redémarrage ; journal du tas chaque minute.
     let mut validated = false;
+    let mut sntp = None;
     let mut ticks: u32 = 0;
     loop {
-        thread::sleep(Duration::from_secs(5));
+        thread::sleep(Duration::from_secs(1));
         ticks += 1;
-        if !validated && network.status().mode != network::NetMode::Connecting {
+        automation.tick(&network, &mut sntp);
+        if !validated && ticks % 5 == 0 && network.status().mode != network::NetMode::Connecting {
             update::mark_running_valid();
             validated = true;
         }
-        if ticks % 12 == 0 {
+        if ticks % 60 == 0 {
             // SAFETY: lecture d'un compteur ESP-IDF, sans argument ni effet de bord.
             info!("tas libre : {} octets", unsafe {
                 sys::esp_get_free_heap_size()

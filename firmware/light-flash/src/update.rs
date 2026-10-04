@@ -289,8 +289,17 @@ fn http_get(url: &str) -> Result<HttpBody> {
         .with_context(|| format!("résolution de {host_port}"))?
         .next()
         .ok_or_else(|| anyhow!("aucune adresse pour {host_port}"))?;
-    let mut stream = TcpStream::connect_timeout(&addr, HTTP_TIMEOUT)
-        .with_context(|| format!("connexion à {addr}"))?;
+    let mut stream = TcpStream::connect_timeout(&addr, HTTP_TIMEOUT).map_err(|e| {
+        anyhow!(
+            "serveur {host_port} injoignable (éteint ? pare-feu ?) : {}",
+            match e.kind() {
+                std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::ConnectionReset =>
+                    "rien n'écoute sur ce port".to_owned(),
+                std::io::ErrorKind::TimedOut => "pas de réponse".to_owned(),
+                _ => e.to_string(),
+            }
+        )
+    })?;
     stream.set_read_timeout(Some(HTTP_TIMEOUT))?;
     stream.set_write_timeout(Some(HTTP_TIMEOUT))?;
     write!(

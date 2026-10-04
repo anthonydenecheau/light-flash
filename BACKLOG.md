@@ -9,12 +9,13 @@ texte comme trace des décisions.
 tâche lumière, API et page HTTP v2 (logo, nom par applique, actions système, mode groupe),
 persistance NVS, reconnexion Wi-Fi avec repli point d'accès, mDNS et nom DHCP, provisioning
 Improv sur BLE avec scan et extinction du BLE, manuel utilisateur (chapitres 1 et 2), mise à
-jour du firmware par HTTP local (§5.3). **Manques face à l'état de l'art local (Shelly, WLED,
-ESPHome), à garder en tête :** scènes et programmation (§2.5), authentification de la page
-(§3), signature des images (§5.3). Prochaines priorités, dans l'ordre : (1) matériel du ruban
-(§6), (2) mémoire avec BLE actif (§4.3), (3) scènes et programmation (§2.5), (4) authentification
-(§3), (5) mise à jour des versions (§2.3), (6) CI (§5.6), (7) devcontainer (§5.5). Deux questions
-en attente du propriétaire : batterie ou non (§1) et licence (§2.3).
+jour du firmware par HTTP local (§5.3), scènes, minuterie et horaires avec heure SNTP (§2.5).
+**Manques face à l'état de l'art local (Shelly, WLED, ESPHome), à garder en tête :**
+authentification de la page (§3), signature des images (§5.3), transitions en fondu (§2.5).
+Prochaines priorités, dans l'ordre : (1) matériel du ruban (§6), (2) mémoire avec BLE actif
+(§4.3, le tas libre descend à ≈ 25 Ko au démarrage avec BLE), (3) authentification (§3), (4)
+mise à jour des versions (§2.3), (5) CI (§5.6), (6) devcontainer (§5.5). Deux questions en
+attente du propriétaire : batterie ou non (§1) et licence (§2.3).
 
 ---
 
@@ -299,6 +300,10 @@ contenu mixte https→http), Matter (pile trop lourde ici).
   12 pastilles + roue, luminosité, effets), carte Réseau (SSID, signal, adresses, changement de
   Wi-Fi, oubli), carte Lampe (nom, Bluetooth, redémarrage, informations), rafraîchissement
   toutes les 4 s, toasts, confirmations. Vérifiée en clair et sombre avec Chrome sans tête.
+  Le 2026-10-04 : Réseau et Mises à jour déplacés dans deux fenêtres (`<dialog>`) ouvertes
+  depuis l'en-tête (barres de signal, flèche avec pastille quand une version est disponible) ;
+  état de mise à jour explicite (« La lampe est à jour ») et résultat annoncé après
+  *Vérifier maintenant*.
 - [x] **Mode groupe** (fait le 2026-10-04) : thread `discovery` (mDNS `_http._tcp`, TXT
   `light-flash=1`, cache rafraîchi chaque minute), `GET /api/peers`, CORS `*` sur l'API, POST en
   `text/plain` (pas de pré-vol), sélecteur « Cette lampe / Toutes les lampes » et liste des autres
@@ -306,11 +311,18 @@ contenu mixte https→http), Matter (pile trop lourde ici).
   Playwright sur la vraie page : découverte en 5 s, commandes reçues par la seconde lampe.
 - [ ] **P3 — Mode groupe, suite** : afficher l'état des autres lampes (allumée ou non), piloter
   un sous-ensemble (cases à cocher), mémoriser le choix « Toutes » entre deux visites.
-- [ ] **P1 — Scènes et programmation** (manque face à l'état de l'art, rappelé le 2026-10-04) :
-  scènes mémorisées en NVS (nom + couleur + effet + luminosité, 8 maximum) avec boutons dans la
-  page et application au groupe ; minuterie d'extinction (« éteindre dans 30 min ») ;
-  programmation horaire (allumage/extinction par jour de semaine), ce qui demande l'heure par
-  SNTP (`esp_idf_svc::sntp`) et un fuseau horaire configurable depuis la page.
+- [x] **Scènes et programmation** (fait le 2026-10-04) : `light_core::scenes` (8 scènes nom +
+  couleur + luminosité + effet, 4 par défaut, remplacement par nom) et `light_core::schedule`
+  (8 horaires jour de semaine + heure + action allumer/éteindre/scène, `Runner` une fois par
+  minute, `SleepTimer`), tests hôte ; `automation.rs` (SNTP dès la station connectée, fuseau
+  POSIX via `TZ`, tick 1 s dans la boucle principale), JSON en NVS ; API `/api/automation`,
+  `/api/scenes*`, `/api/schedule`, `/api/timer`, `/api/time` ; cartes *Scènes* et
+  *Programmation* dans la page (scènes aussi en mode groupe). Vérifié sur carte : heure reçue en
+  14 s, minuterie, horaire, changement de fuseau, persistance après reflash.
+- [ ] **P2 — Programmation, suite** : transitions en fondu (allumage progressif le matin,
+  extinction douce), horaires au lever/coucher du soleil (position à saisir, calcul local),
+  rattrapage de l'état attendu au démarrage (rejouer le dernier horaire passé de la journée),
+  minuterie conservée au redémarrage, affichage de la prochaine action dans la page.
 - [ ] **P3 — Effets supplémentaires** et vitesse d'effet réglable depuis la page.
 
 ---

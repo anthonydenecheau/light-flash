@@ -50,6 +50,11 @@ CARGO_FLAGS += --release
 else
 PROFILE     := debug
 endif
+# Features cargo de la crate (ex. FEATURES=debug-hooks pour les points d'entrée /api/debug/*).
+FEATURES ?=
+ifneq ($(FEATURES),)
+CARGO_FLAGS += --features $(FEATURES)
+endif
 
 ifneq ($(PORT),)
 PORT_FLAG := --port $(PORT)
@@ -82,7 +87,7 @@ WS_EXCLUDE := $(if $(wildcard cfg.toml),,--exclude hardware-check)
 help: ## Affiche cette aide
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo
-	@echo "Variables : CRATE=$(CRATE) ($(CRATES))  RELEASE=$(RELEASE)  PORT=$(PORT)  EX=$(EX)  SECS=$(SECS)  VERSION=$(VERSION)  UPDATE_URL=$(UPDATE_URL)"
+	@echo "Variables : CRATE=$(CRATE) ($(CRATES))  RELEASE=$(RELEASE)  FEATURES=$(FEATURES)  PORT=$(PORT)  EX=$(EX)  SECS=$(SECS)  VERSION=$(VERSION)  UPDATE_URL=$(UPDATE_URL)"
 
 # ---- Installation (Ubuntu) -------------------------------------------------
 setup: setup-system setup-rust setup-serial doctor ## Installe tout : paquets, toolchain Rust, outils ESP, accès série
@@ -117,7 +122,7 @@ doctor: ## Vérifie la présence des outils et de la carte
 	else echo "  [--] aucune carte détectée (/dev/ttyACM*)"; fi
 
 # ---- Compilation -----------------------------------------------------------
-build: ## Compile la crate (CRATE=..., RELEASE=1 pour le profil release)
+build: ## Compile la crate (CRATE=..., RELEASE=1 pour le profil release, FEATURES=debug-hooks)
 	cargo build -p $(CRATE) $(CARGO_FLAGS)
 
 build-all: ## Compile tout le workspace, exemples compris (hardware-check seulement si cfg.toml existe)
@@ -160,6 +165,9 @@ BOOTLOADER_CMD = ls -t target/$(TARGET)/$(PROFILE)/build/esp-idf-sys-*/out/build
 
 flash: build ## Flashe l'ELF + bootloader du projet + partitions.csv (jamais borné : une écriture interrompue rend la carte non amorçable)
 	$(SERIAL_SH) 'espflash flash --chip $(CHIP) --bootloader "$$($(BOOTLOADER_CMD))" --partition-table $(PARTITIONS) $(PORT_FLAG) $(ELF)'
+	@# Le câble écrit toujours ota_0 ; si une mise à jour OTA avait activé ota_1, le bootloader
+	@# continuerait de démarrer l'ancienne image. otadata effacé = ota_0 redevient l'image active.
+	$(SERIAL_SH) 'espflash erase-parts --chip $(CHIP) --partition-table $(PARTITIONS) $(PORT_FLAG) otadata'
 
 monitor: ## Moniteur série seul (SECS=30 pour le borner)
 	$(SERIAL_SH) '$(TIMEOUT)espflash monitor $(PORT_FLAG) $(NONINT) --elf $(ELF)$(TIMEOUT_OK)'

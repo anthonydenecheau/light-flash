@@ -11,13 +11,31 @@
 <style>
 :root{--bg:#f3f4f7;--card:#fff;--text:#15171c;--muted:#687083;--line:#e3e6ec;--accent:#4f6df5;--accent2:#c23ad6;--danger:#d92d20;--ok:#17a34a;--warn:#e9a23b;--r:18px;--shadow:0 1px 2px rgba(16,24,40,.05),0 10px 28px rgba(16,24,40,.07)}
 @media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#1a1d24;--text:#eef0f4;--muted:#98a2b3;--line:#2b303b;--shadow:0 1px 2px rgba(0,0,0,.45),0 10px 28px rgba(0,0,0,.4)}}
-*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}[hidden]{display:none!important}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased}
 main{max-width:30rem;margin:0 auto;padding:1rem 1rem 2.5rem;display:grid;gap:1rem}
-header{display:flex;align-items:center;gap:.9rem;padding:.4rem .2rem}
+header{display:flex;align-items:center;gap:.8rem;padding:.4rem .2rem}
 header img{width:58px;height:58px;border-radius:50%;box-shadow:var(--shadow);flex:none}
+.hd{flex:1;min-width:0}
 header h1{margin:0;font-size:1.4rem;font-weight:650;letter-spacing:-.01em;overflow-wrap:anywhere}
-.sub{color:var(--muted);font-size:.85rem;display:flex;align-items:center;gap:.4rem;margin-top:.2rem}
+.sub{border:0;background:none;padding:0;font:inherit;text-align:left;color:var(--muted);font-size:.85rem;display:flex;align-items:center;gap:.4rem;margin-top:.2rem;cursor:pointer}
+.icons{display:flex;gap:.45rem;flex:none}
+.ico{position:relative;width:2.6rem;height:2.6rem;border-radius:50%;border:1px solid var(--line);background:var(--card);box-shadow:var(--shadow);cursor:pointer;display:grid;place-items:center;color:var(--text);padding:0}
+.ico svg{width:1.35rem;height:1.35rem;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ico .bars{margin:0;height:1.05rem;gap:3px}.ico .bars i{width:4px}
+.badge{position:absolute;top:.25rem;right:.25rem;width:.65rem;height:.65rem;border-radius:50%;background:var(--accent2);box-shadow:0 0 0 2px var(--card)}
+.ico.busy svg{animation:spin 1.2s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+dialog{border:0;padding:0;background:var(--card);color:var(--text);border-radius:var(--r) var(--r) 0 0;width:100%;max-width:100%;margin:auto 0 0;max-height:88vh;overflow:auto;box-shadow:0 -10px 40px rgba(0,0,0,.25)}
+dialog::backdrop{background:rgba(10,12,18,.5);backdrop-filter:blur(2px)}
+dialog[open]{animation:up .22s ease-out}@keyframes up{from{transform:translateY(30px);opacity:0}}
+.dbody{padding:1.1rem 1.2rem calc(1.4rem + env(safe-area-inset-bottom))}
+.dhd{display:flex;align-items:center;justify-content:space-between;margin-bottom:.9rem}.dhd h2{margin:0}
+.dhd .x{border:0;background:var(--bg);width:2rem;height:2rem;border-radius:50%;cursor:pointer;font:inherit;color:var(--muted)}
+@media(min-width:600px){dialog{margin:auto;max-width:30rem;border-radius:var(--r)}}
+.state{display:flex;align-items:center;gap:.7rem;padding:.8rem .9rem;border-radius:12px;background:var(--bg);margin:.6rem 0 .2rem;font-size:.95rem}
+.state i{width:1.6rem;height:1.6rem;border-radius:50%;flex:none;display:grid;place-items:center;color:#fff;font-style:normal;font-size:.9rem;font-weight:700}
+.state.ok i{background:var(--ok)}.state.warn i{background:var(--warn)}.state.err i{background:var(--danger)}.state.new i{background:var(--accent)}.state.none i{background:var(--muted)}
+.state div{flex:1;min-width:0}.state small{display:block;color:var(--muted);overflow-wrap:anywhere}
 .dot{width:.55rem;height:.55rem;border-radius:50%;background:var(--muted);flex:none}.dot.on{background:var(--ok)}.dot.ap{background:var(--warn)}
 section{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:1.1rem 1.2rem}
 h2{margin:0 0 .9rem;font-size:.78rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:650}
@@ -49,20 +67,37 @@ input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline
 #toast{position:fixed;left:50%;bottom:1.2rem;transform:translate(-50%,16px);background:var(--text);color:var(--bg);padding:.65rem 1.1rem;border-radius:999px;font-size:.9rem;opacity:0;transition:.25s;pointer-events:none;max-width:90vw;text-align:center}
 #toast.show{opacity:1;transform:translate(-50%,0)}
 footer{text-align:center;color:var(--muted);font-size:.75rem}
-body.busy section{opacity:.6;pointer-events:none}
+body.busy section,body.busy .dbody{opacity:.6;pointer-events:none}
 .upd{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
 .upd h2{color:rgba(255,255,255,.8)}.upd p{margin:.3rem 0 0;font-size:.92rem;opacity:.95}
 .upd .btn{background:#fff;border-color:#fff;color:var(--accent)}
 .bar{height:7px;background:rgba(255,255,255,.3);border-radius:4px;margin:.9rem 0 .4rem;overflow:hidden}.bar i{display:block;height:100%;width:0;background:#fff;border-radius:4px;transition:width .4s}
 .upd small{display:block;opacity:.9}
 .mini{font-size:.85rem;color:var(--muted);margin:.2rem 0 .6rem}
+.chips{display:flex;flex-wrap:wrap;gap:.5rem}
+.chip{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.chip button{border:0;background:transparent;color:var(--text);font:inherit;font-size:.92rem;padding:.5rem .4rem .5rem .8rem;cursor:pointer;display:inline-flex;align-items:center;gap:.45rem}
+.chip i{width:.8rem;height:.8rem;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
+.x{color:var(--muted)}.chip .x{padding:.5rem .7rem .5rem .4rem}.x:hover{color:var(--danger)}
+.inline{display:flex;gap:.5rem;margin-top:.9rem}.inline input{flex:1;min-width:0}
+.seg.four{grid-template-columns:repeat(4,1fr)}
+.sched{list-style:none;margin:0;padding:0}.sched li{display:flex;align-items:center;gap:.6rem;padding:.5rem 0;border-top:1px solid var(--line);font-size:.93rem}
+.sched li.off b,.sched li.off span{opacity:.45}.sched li span{flex:1;color:var(--muted)}.sched li b{font-variant-numeric:tabular-nums;font-weight:600}
+.sched .x{border:0;background:transparent;font:inherit;cursor:pointer;padding:.3rem .4rem}.sched input{accent-color:var(--accent);width:1.1rem;height:1.1rem;margin:0}
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:.3rem;margin-top:.8rem}.days label{text-align:center;border:1px solid var(--line);border-radius:9px;padding:.45rem 0;font-size:.9rem;cursor:pointer;user-select:none}
+.days input{position:absolute;opacity:0;width:0;height:0}.days label:has(:checked){background:var(--accent);border-color:var(--accent);color:#fff}
+select{font:inherit;font-size:1rem;padding:.65rem .75rem;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);width:100%}
 </style>
 </head>
 <body>
 <main>
 <header>
   <img src="__LOGO__" alt="">
-  <div><h1 id="name">light-flash</h1><div class="sub"><span class="dot" id="dot"></span><span id="netline">Connexion à la lampe…</span></div></div>
+  <div class="hd"><h1 id="name">light-flash</h1><button class="sub" id="netline-btn" type="button"><span class="dot" id="dot"></span><span id="netline">Connexion à la lampe…</span></button></div>
+  <div class="icons">
+    <button class="ico" id="open-net" type="button" aria-label="Réseau" title="Réseau"><span id="hdr-bars"></span></button>
+    <button class="ico" id="open-upd" type="button" aria-label="Mises à jour" title="Mises à jour"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v9M8.5 13l3.5 3.5 3.5-3.5"/></svg><i class="badge" id="upd-badge" hidden></i></button>
+  </div>
 </header>
 
 <section class="upd" id="update" hidden>
@@ -90,7 +125,70 @@ body.busy section{opacity:.6;pointer-events:none}
 </section>
 
 <section>
-  <h2>Réseau</h2>
+  <h2>Scènes</h2>
+  <div class="chips" id="scenes"></div>
+  <form class="inline" id="scene-save" autocomplete="off">
+    <input type="text" id="scene-name" maxlength="24" placeholder="Nom de la scène" required aria-label="Nom de la scène">
+    <button class="btn primary" type="submit">Mémoriser</button>
+  </form>
+  <p class="mini">Touchez une scène pour l'appliquer. « Mémoriser » enregistre les réglages actuels sous ce nom (un nom existant est remplacé).</p>
+</section>
+
+<section>
+  <h2>Programmation</h2>
+  <div class="row" style="margin-top:0"><span>Minuterie d'extinction</span><span class="val" id="timer-val">–</span></div>
+  <div class="seg four" id="timer" role="group" aria-label="Minuterie">
+    <button data-m="15">15 min</button><button data-m="30">30 min</button><button data-m="60">1 h</button><button data-m="0">Annuler</button>
+  </div>
+  <div class="row"><span>Horaires</span><span class="val" id="clock">–</span></div>
+  <ul class="sched" id="sched"></ul>
+  <details>
+    <summary>Ajouter un horaire</summary>
+    <form id="sched-add">
+      <div class="days" id="days" role="group" aria-label="Jours"></div>
+      <label class="f">Heure<input type="time" id="sched-time" value="07:30" required></label>
+      <label class="f">Action<select id="sched-action"><option value="on">Allumer</option><option value="off">Éteindre</option></select></label>
+      <div class="actions"><button class="btn primary" type="submit">Ajouter</button></div>
+    </form>
+  </details>
+  <details>
+    <summary>Fuseau horaire</summary>
+    <label class="f">Région<select id="tz-preset">
+      <option value="">Autre (saisir ci-dessous)</option>
+      <option value="CET-1CEST,M3.5.0,M10.5.0/3">France, Belgique, Suisse, Allemagne, Espagne, Italie</option>
+      <option value="GMT0BST,M3.5.0/1,M10.5.0">Royaume-Uni, Irlande, Portugal</option>
+      <option value="EET-2EEST,M3.5.0/3,M10.5.0/4">Grèce, Finlande, Roumanie, Ukraine</option>
+      <option value="EST5EDT,M3.2.0,M11.1.0">Québec, New York</option>
+      <option value="&lt;-04&gt;4">Guadeloupe, Martinique</option>
+      <option value="&lt;-03&gt;3">Guyane, Saint-Pierre-et-Miquelon (hiver)</option>
+      <option value="&lt;+04&gt;-4">La Réunion, Maurice</option>
+      <option value="&lt;+11&gt;-11">Nouvelle-Calédonie</option>
+      <option value="&lt;-10&gt;10">Polynésie française</option>
+      <option value="UTC0">UTC</option>
+    </select></label>
+    <label class="f">Chaîne POSIX<input type="text" id="tz" maxlength="64" autocomplete="off" spellcheck="false"></label>
+    <div class="actions"><button class="btn" type="button" id="tz-save">Enregistrer</button></div>
+  </details>
+</section>
+
+<section>
+  <h2>Lampe</h2>
+  <form id="rename">
+    <label class="f">Nom de la lampe<input type="text" id="newname" maxlength="32" required placeholder="Salon 1"></label>
+    <div class="actions"><button class="btn primary" type="submit">Renommer et redémarrer</button></div>
+  </form>
+  <div class="actions">
+    <button class="btn" id="ble">Rendre visible en Bluetooth</button>
+    <button class="btn" id="restart">Redémarrer…</button>
+  </div>
+  <p class="meta" id="meta"></p>
+</section>
+
+<footer>light-flash <span id="version"></span></footer>
+</main>
+
+<dialog id="dlg-net" aria-labelledby="dlg-net-h"><div class="dbody">
+  <div class="dhd"><h2 id="dlg-net-h">Réseau</h2><button class="x" type="button" data-close aria-label="Fermer">✕</button></div>
   <dl>
     <dt>Réseau</dt><dd id="ssid">–</dd>
     <dt>Signal</dt><dd id="rssi">–</dd>
@@ -107,32 +205,19 @@ body.busy section{opacity:.6;pointer-events:none}
     </form>
   </details>
   <div class="actions"><button class="btn danger" id="forget">Oublier le Wi-Fi…</button></div>
-</section>
+</div></dialog>
 
-<section>
-  <h2>Lampe</h2>
-  <form id="rename">
-    <label class="f">Nom de la lampe<input type="text" id="newname" maxlength="32" required placeholder="Salon 1"></label>
-    <div class="actions"><button class="btn primary" type="submit">Renommer et redémarrer</button></div>
-  </form>
-  <div class="actions">
-    <button class="btn" id="ble">Rendre visible en Bluetooth</button>
-    <button class="btn" id="restart">Redémarrer…</button>
-  </div>
-  <p class="meta" id="meta"></p>
-</section>
-
-<section>
-  <h2>Mises à jour</h2>
+<dialog id="dlg-upd" aria-labelledby="dlg-upd-h"><div class="dbody">
+  <div class="dhd"><h2 id="dlg-upd-h">Mises à jour</h2><button class="x" type="button" data-close aria-label="Fermer">✕</button></div>
   <p class="mini" id="upd-info">–</p>
+  <div class="state none" id="upd-state"><i>?</i><div><span id="upd-state-text">–</span><small id="upd-state-sub" hidden></small></div></div>
+  <div class="actions" id="upd-state-actions" hidden><button class="btn primary" id="upd-install2" type="button">Mettre à jour</button></div>
   <form id="updurl">
     <label class="f">Serveur de mises à jour<input type="text" id="upd-url" maxlength="128" placeholder="http://192.168.1.30:8000" inputmode="url" autocomplete="off"></label>
     <div class="actions"><button class="btn primary" type="submit">Enregistrer</button><button class="btn" type="button" id="upd-check">Vérifier maintenant</button></div>
   </form>
-</section>
-
-<footer>light-flash <span id="version"></span></footer>
-</main>
+  <p class="mini">La lampe vérifie seule au démarrage puis toutes les six heures.</p>
+</div></dialog>
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -189,21 +274,23 @@ document.querySelectorAll("#effects button").forEach(b => b.onclick = () => patc
 
 // ---- réseau et système
 function bars(rssi) { const n = rssi == null ? 0 : rssi > -55 ? 4 : rssi > -65 ? 3 : rssi > -75 ? 2 : 1; return `<span class="bars">${[1,2,3,4].map(i => `<i class="${i <= n ? "on" : ""}" style="height:${i * 25}%"></i>`).join("")}</span>`; }
+$("hdr-bars").innerHTML = bars(null);
 function uptime(s) { const j = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return (j ? j + " j " : "") + (h || j ? h + " h " : "") + m + " min"; }
 function paintStatus(s) {
   status = s; document.title = s.name; $("name").textContent = s.name; $("version").textContent = "v" + s.version; $("newname").placeholder = s.name;
   const dot = $("dot"); dot.className = "dot " + (s.wifi_mode === "station" ? "on" : s.wifi_mode === "access-point" ? "ap" : "");
   $("netline").textContent = s.wifi_mode === "station" ? "En ligne sur " + s.ssid : s.wifi_mode === "access-point" ? "Point d'accès de secours" : "Connexion au Wi-Fi…";
   $("ssid").textContent = s.ssid || "–"; $("ip").textContent = s.ip || "–";
-  $("rssi").innerHTML = s.rssi == null ? "–" : bars(s.rssi) + s.rssi + " dBm";
+  $("rssi").innerHTML = s.rssi == null ? "–" : bars(s.rssi) + s.rssi + " dBm"; $("hdr-bars").innerHTML = bars(s.rssi);
   $("urls").innerHTML = s.wifi_mode === "station" ? `<a href="http://${s.hostname}.local/">${s.hostname}.local</a> · <a href="http://${s.hostname}/">${s.hostname}</a>` : (s.ip ? `<a href="http://${s.ip}/">${s.ip}</a>` : "–");
   $("ble").textContent = s.ble_active ? "Bluetooth actif (prolonger)" : "Rendre visible en Bluetooth";
   $("meta").textContent = `${s.hardware} · ${s.led_count} LED, ${s.max_ma} mA max · allumée depuis ${uptime(s.uptime_s)} · ${Math.round(s.heap_free / 1024)} Ko libres`;
 }
 const PHASES = { checking: "Vérification…", downloading: "Téléchargement", verifying: "Vérification de l'image…", rebooting: "Redémarrage de la lampe…", failed: "Échec" };
-let updUrlTouched = false;
+let updUrlTouched = false, lastUpd = null;
 function paintUpdate(u) {
-  const busy = ["downloading", "verifying", "rebooting"].includes(u.phase);
+  lastUpd = u;
+  const busy = ["downloading", "verifying", "rebooting"].includes(u.phase), checking = u.phase === "checking";
   const sec = $("update"); sec.hidden = !(u.available || busy || u.phase === "failed");
   if (!sec.hidden) {
     $("upd-title").textContent = u.available ? `Mise à jour ${u.available.version} disponible` : u.phase === "failed" ? "Mise à jour échouée" : "Mise à jour en cours";
@@ -212,26 +299,113 @@ function paintUpdate(u) {
     $("upd-progress").hidden = !busy; $("upd-bar").style.width = (u.phase === "rebooting" ? 100 : u.progress) + "%";
     $("upd-phase").textContent = (PHASES[u.phase] || "") + (u.phase === "downloading" ? ` ${u.progress} %` : "");
   }
+  $("upd-badge").hidden = !u.available; $("open-upd").classList.toggle("busy", busy || checking);
+  $("upd-info").textContent = `Version ${u.current} · emplacement ${u.running_slot}`;
   const ago = u.last_check_s == null || !status ? null : Math.max(0, Math.round((status.uptime_s - u.last_check_s) / 60));
-  $("upd-info").textContent = `Version ${u.current} (emplacement ${u.running_slot})` + (u.url ? (ago == null ? "" : ` · vérifié il y a ${ago} min`) + (u.available ? "" : u.error ? " · " + u.error : " · à jour") : " · aucun serveur configuré");
+  const agoText = ago == null ? "" : ago === 0 ? "vérifié à l'instant" : `vérifié il y a ${ago} min`;
+  let cls = "none", icon = "?", text, sub = agoText;
+  if (!u.url) { text = "Aucun serveur de mises à jour"; sub = "Saisissez l'adresse du serveur ci-dessous."; }
+  else if (checking) { icon = "…"; text = "Vérification en cours…"; sub = ""; }
+  else if (busy) { cls = "new"; icon = "↓"; text = PHASES[u.phase] + (u.phase === "downloading" ? ` ${u.progress} %` : ""); sub = ""; }
+  else if (u.phase === "failed") { cls = "err"; icon = "!"; text = "Mise à jour échouée"; sub = u.error || ""; }
+  else if (u.available) { cls = "new"; icon = "↑"; text = `Mise à jour ${u.available.version} disponible`; sub = u.available.notes || agoText; }
+  else if (u.error) { cls = "warn"; icon = "!"; text = "Vérification impossible"; sub = u.error; }
+  else if (u.last_check_s == null) { text = "Pas encore vérifié"; sub = "La première vérification a lieu peu après le démarrage."; }
+  else { cls = "ok"; icon = "✓"; text = `La lampe est à jour (version ${u.current})`; }
+  const st = $("upd-state"); st.className = "state " + cls; st.querySelector("i").textContent = icon;
+  $("upd-state-text").textContent = text; $("upd-state-sub").textContent = sub; $("upd-state-sub").hidden = !sub;
+  $("upd-state-actions").hidden = !(u.available && !busy);
   if (!updUrlTouched) $("upd-url").value = u.url || "";
 }
+// Enregistre l'adresse si elle a changé, lance la vérification, puis attend son résultat pour
+// l'annoncer clairement (à jour, mise à jour disponible, ou serveur injoignable).
+async function checkNow() {
+  const b = $("upd-check"), url = $("upd-url").value.trim(), before = lastUpd ? lastUpd.last_check_s : null;
+  const changed = lastUpd && url !== (lastUpd.url || "");
+  b.disabled = true; b.textContent = "Vérification…";
+  try {
+    if (changed) { await api("/api/update/url", { url }); updUrlTouched = false; }
+    if (!url) { toast(changed ? "Serveur de mises à jour retiré." : "Saisissez d'abord l'adresse du serveur.", 3500); paintUpdate(await api("/api/update")); return; }
+    if (!changed) await api("/api/update/check", {});
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      let u; try { u = await api("/api/update"); } catch (_) { continue; }
+      paintUpdate(u);
+      if (u.phase !== "checking" && u.last_check_s != null && u.last_check_s !== before) {
+        toast(u.available ? `Mise à jour ${u.available.version} disponible` : u.error ? "Vérification impossible : " + u.error : `Aucune mise à jour : la lampe est à jour (version ${u.current})`, 5000);
+        return;
+      }
+    }
+    toast("La vérification n'a pas abouti, réessayez.", 4000);
+  } catch (e) { toast("Erreur : " + e.message, 4000); }
+  finally { b.disabled = false; b.textContent = "Vérifier maintenant"; }
+}
 $("upd-url").oninput = () => { updUrlTouched = true; };
-$("updurl").onsubmit = e => { e.preventDefault(); updUrlTouched = false; action("/api/update/url", { url: $("upd-url").value }); };
-$("upd-check").onclick = () => action("/api/update/check", {});
-$("upd-install").onclick = () => action("/api/update/install", {}, "Installer la mise à jour ? La lampe redémarrera à la fin.");
+$("updurl").onsubmit = e => { e.preventDefault(); checkNow(); };
+$("upd-check").onclick = checkNow;
+$("upd-install").onclick = $("upd-install2").onclick = () => action("/api/update/install", {}, "Installer la mise à jour ? La lampe redémarrera à la fin.");
+// ---- fenêtres Réseau et Mises à jour
+document.querySelectorAll("dialog").forEach(d => { d.onclick = e => { if (e.target === d) d.close(); }; d.querySelector("[data-close]").onclick = () => d.close(); });
+$("open-net").onclick = $("netline-btn").onclick = () => $("dlg-net").showModal();
+$("open-upd").onclick = () => $("dlg-upd").showModal();
 async function refresh() {
   if (document.visibilityState !== "visible") return;
-  try { paintLight(await api("/api/light")); paintStatus(await api("/api/status")); paintPeers((await api("/api/peers")).peers || []); paintUpdate(await api("/api/update")); }
+  try { paintLight(await api("/api/light")); paintStatus(await api("/api/status")); paintPeers((await api("/api/peers")).peers || []); paintUpdate(await api("/api/update")); paintAuto(await api("/api/automation")); }
   catch (e) { $("netline").textContent = "Lampe injoignable"; $("dot").className = "dot"; }
 }
 async function action(path, body, confirmMsg) {
-  if (confirmMsg && !confirm(confirmMsg)) return;
+  if (confirmMsg && !confirm(confirmMsg)) return null;
   document.body.classList.add("busy");
-  try { const r = await api(path, body || {}); toast(r.message || "OK", 4000); }
-  catch (e) { toast("Erreur : " + e.message, 4000); }
+  try { const r = await api(path, body || {}); toast(r.message || "OK", 4000); return r; }
+  catch (e) { toast("Erreur : " + e.message, 4000); return null; }
   finally { document.body.classList.remove("busy"); }
 }
+// ---- scènes et programmation
+const DAYS = ["L", "M", "M", "J", "V", "S", "D"], DAYN = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const pad = n => String(n).padStart(2, "0");
+let auto = null, tzTouched = false;
+function daysText(d) { return d === 127 ? "tous les jours" : d === 31 ? "en semaine" : d === 96 ? "le week-end" : DAYN.filter((_, i) => d & (1 << i)).join(" "); }
+function actionText(e) { if (e.action === "on") return "allumer"; if (e.action === "off") return "éteindre"; const s = auto.scenes.find(s => s.id === e.scene); return "scène " + (s ? s.name : e.scene); }
+function fmtTimer(s) { return s >= 3600 ? `${Math.floor(s / 3600)} h ${pad(Math.floor(s % 3600 / 60))}` : s >= 60 ? `${Math.ceil(s / 60)} min` : `${s} s`; }
+function paintAuto(a) {
+  auto = a;
+  $("scenes").innerHTML = a.scenes.length ? a.scenes.map(s => `<div class="chip"><button type="button" data-id="${s.id}" title="Appliquer"><i style="background:${esc(s.color)}"></i>${esc(s.name)}</button><button type="button" class="x" data-del="${s.id}" aria-label="Supprimer ${esc(s.name)}">✕</button></div>`).join("") : "<span class='mini'>Aucune scène : réglez la lumière, puis mémorisez-la sous un nom.</span>";
+  $("timer-val").textContent = a.timer_s == null ? "inactive" : "extinction dans " + fmtTimer(a.timer_s);
+  $("clock").textContent = a.time.synced ? `${DAYN[a.time.weekday]} ${pad(a.time.hour)}:${pad(a.time.minute)}` : "heure non reçue (accès Internet ?)";
+  $("sched").innerHTML = a.schedule.length ? a.schedule.map((e, i) => `<li class="${e.enabled ? "" : "off"}"><input type="checkbox" data-i="${i}" ${e.enabled ? "checked" : ""} aria-label="Actif"><b>${pad(e.hour)}:${pad(e.minute)}</b><span>${daysText(e.days)} · ${actionText(e)}</span><button type="button" class="x" data-rm="${i}" aria-label="Supprimer">✕</button></li>`).join("") : "<li class='mini' style='border:0'>Aucun horaire. La lampe suit les horaires seulement quand elle reçoit l'heure (Internet).</li>";
+  const sel = $("sched-action"), cur = sel.value;
+  sel.innerHTML = `<option value="on">Allumer</option><option value="off">Éteindre</option>` + a.scenes.map(s => `<option value="scene:${s.id}">Scène ${esc(s.name)}</option>`).join("");
+  if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+  if (!tzTouched) { $("tz").value = a.time.tz; const o = [...$("tz-preset").options].find(o => o.value === a.time.tz); $("tz-preset").value = o ? o.value : ""; }
+}
+async function refreshAuto() { try { paintAuto(await api("/api/automation")); } catch (_) {} }
+$("scenes").onclick = e => {
+  const b = e.target.closest("button"); if (!b || !auto) return;
+  if (b.dataset.del) { const s = auto.scenes.find(s => s.id === +b.dataset.del); if (s && confirm(`Supprimer la scène « ${s.name} » ?`)) action("/api/scenes/delete", { id: s.id }).then(refreshAuto); return; }
+  const s = auto.scenes.find(s => s.id === +b.dataset.id); if (!s) return;
+  patch({ power: true, color: s.color, brightness: s.brightness, effect: s.effect }); toast("Scène « " + s.name + " »", 1500);
+};
+$("scene-save").onsubmit = async e => { e.preventDefault(); if (await action("/api/scenes", { name: $("scene-name").value })) { $("scene-name").value = ""; refreshAuto(); } };
+document.querySelectorAll("#timer button").forEach(b => b.onclick = () => action("/api/timer", { minutes: +b.dataset.m }).then(refreshAuto));
+const postSchedule = entries => action("/api/schedule", { entries }).then(refreshAuto);
+$("sched").onchange = e => { const i = +e.target.dataset.i; if (!auto || isNaN(i)) return; postSchedule(auto.schedule.map((x, k) => k === i ? { ...x, enabled: e.target.checked } : x)); };
+$("sched").onclick = e => { const b = e.target.closest("button[data-rm]"); if (!b || !auto) return; postSchedule(auto.schedule.filter((_, k) => k !== +b.dataset.rm)); };
+const daysBox = $("days");
+DAYS.forEach((d, i) => { const l = document.createElement("label"); l.innerHTML = `<input type="checkbox" value="${i}" ${i < 5 ? "checked" : ""}><span>${d}</span>`; l.title = DAYN[i]; daysBox.appendChild(l); });
+$("sched-add").onsubmit = e => {
+  e.preventDefault(); if (!auto) return;
+  const days = [...daysBox.querySelectorAll("input:checked")].reduce((m, i) => m | (1 << +i.value), 0);
+  if (!days) { toast("Choisissez au moins un jour"); return; }
+  const [h, m] = $("sched-time").value.split(":").map(Number), v = $("sched-action").value;
+  const entry = { enabled: true, days, hour: h, minute: m, action: v.startsWith("scene:") ? "scene" : v };
+  if (entry.action === "scene") entry.scene = +v.slice(6);
+  postSchedule([...auto.schedule, entry]);
+};
+$("tz-preset").onchange = () => { if ($("tz-preset").value) $("tz").value = $("tz-preset").value; tzTouched = true; };
+$("tz").oninput = () => { tzTouched = true; };
+$("tz-save").onclick = () => { tzTouched = false; action("/api/time", { tz: $("tz").value }).then(refreshAuto); };
+
 $("wifi").onsubmit = e => { e.preventDefault(); action("/connect", Object.fromEntries(new FormData(e.target).entries())); };
 $("rename").onsubmit = e => { e.preventDefault(); action("/api/name", { name: $("newname").value }); };
 $("forget").onclick = () => action("/api/system/forget-wifi", {}, "Oublier le réseau Wi-Fi ? La lampe redémarrera sur son point d'accès de secours.");

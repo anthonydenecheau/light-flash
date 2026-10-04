@@ -1,6 +1,8 @@
 //! Serveur HTTP de la lampe : page de pilotage (`/`), API JSON (`/api/light`, `/api/status`),
 //! réception des identifiants Wi-Fi (`/connect`), nom et actions système (`/api/name`,
-//! `/api/system/*`), manifeste et icône pour l'écran d'accueil.
+//! `/api/system/*`), mises à jour (`/api/update*`), scènes et programmation (`/api/automation`,
+//! `/api/scenes*`, `/api/schedule`, `/api/timer`, `/api/time`), manifeste et icône pour l'écran
+//! d'accueil.
 //!
 //! Les handlers tournent dans la tâche httpd d'ESP-IDF : ils appliquent les commandes à
 //! l'état partagé et ne touchent jamais au driver LED (voir la tâche lumière du firmware).
@@ -12,19 +14,24 @@ use embedded_svc::{
     io::{Read, Write},
 };
 use esp_idf_svc::http::server::{Configuration, EspHttpConnection, EspHttpServer, Request};
-use light_core::{LightPatch, LightView, SharedState};
+use light_core::{
+    scenes::Scene,
+    schedule::{Entry, Schedule},
+    LightPatch, LightView, SharedState,
+};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 static INDEX_HTML: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/index.html"));
 static INDEX_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/index.html.gz"));
 static ICON_PNG: &[u8] = include_bytes!("static/icon-192.png");
 
-/// Taille maximale d'un corps JSON (modification de l'état, identifiants Wi-Fi, nom).
-const MAX_BODY: usize = 512;
+/// Taille maximale d'un corps JSON (le programme complet, 8 horaires, fait ≈ 650 octets).
+const MAX_BODY: usize = 1024;
 /// Pile de la tâche httpd : le parsing JSON et anyhow dépassent les 4 Ko par défaut.
 const STACK_SIZE: usize = 10 * 1024;
-const MAX_URI_HANDLERS: usize = 24;
+const MAX_URI_HANDLERS: usize = 32;
 
 /// Appelé avec le SSID et le mot de passe reçus par `POST /connect`.
 /// Doit valider, enregistrer et rendre la main rapidement (le redémarrage éventuel est
@@ -109,7 +116,7 @@ pub struct UpdateHooks {
     pub set_url: Box<StringSetter>,
 }
 
-/// Points d'entrée réservés aux builds de debug (`cfg!(debug_assertions)` côté firmware).
+/// Points d'entrée de test, activés par la feature `debug-hooks` du firmware.
 pub struct DebugHooks {
     /// `POST /api/debug/wifi-disconnect` : force une déconnexion de la station pour tester la
     /// reconnexion automatique.
@@ -120,6 +127,41 @@ pub struct DebugHooks {
     pub ble_off: Box<Action>,
 }
 
+/// Scènes, minuterie et horaires, tenus par le firmware (`automation.rs`).
+pub trait Automation: Send + Sync {
+    fn view(&self) -> AutomationView;
+    /// Ajoute ou remplace une scène ; rend l'identifiant attribué.
+    fn save_scene(&self, scene: Scene) -> Result<u8>;
+    fn delete_scene(&self, id: u8) -> Result<()>;
+    fn apply_scene(&self, id: u8) -> Result<()>;
+    fn set_schedule(&self, schedule: Schedule) -> Result<()>;
+    /// Minuterie d'extinction ; 0 l'annule.
+    fn set_timer(&self, minutes: u32) -> Result<()>;
+    /// Fuseau horaire au format POSIX (`CET-1CEST,M3.5.0,M10.5.0/3`).
+    fn set_timezone(&self, tz: &str) -> Result<()>;
+}
+
+/// `GET /api/automation`.
+#[derive(Debug, Clone, Serialize)]
+pub struct AutomationView {
+    pub scenes: Vec<Scene>,
+    pub schedule: Vec<Entry>,
+    /// Secondes avant l'extinction par la minuterie, `None` si inactive.
+    pub timer_s: Option<u64>,
+    pub time: TimeView,
+}
+
+/// Heure locale de la lampe ; les champs sont absents tant que l'horloge n'est pas à l'heure.
+#[derive(Debug, Clone, Serialize)]
+pub struct TimeView {
+    pub synced: bool,
+    /// 0 = lundi.
+    pub weekday: Option<u8>,
+    pub hour: Option<u8>,
+    pub minute: Option<u8>,
+    pub tz: String,
+}
+
 pub struct HttpContext {
     pub light: SharedState,
     pub on_wifi_credentials: Box<OnWifiCredentials>,
@@ -127,7 +169,40 @@ pub struct HttpContext {
     pub peers: Box<PeersProvider>,
     pub system: SystemHooks,
     pub update: UpdateHooks,
+    pub automation: Arc<dyn Automation>,
     pub debug: Option<DebugHooks>,
+}
+
+/// `POST /api/scenes` : les champs absents sont pris sur l'état courant de la lampe
+/// (« mémoriser les réglages actuels »). `id` absent ou 0 : nouvelle scène, ou remplacement de
+/// celle qui porte le même nom.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SceneForm {
+    #[serde(default)]
+    id: u8,
+    name: String,
+    color: Option<String>,
+    brightness: Option<u8>,
+    effect: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IdForm {
+    id: u8,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TimerForm {
+    minutes: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TimezoneForm {
+    tz: String,
 }
 
 #[derive(Deserialize)]
@@ -157,9 +232,10 @@ pub fn start(ctx: HttpContext) -> Result<EspHttpServer<'static>> {
         peers,
         system,
         update,
+        automation,
         debug,
     } = ctx;
-    let status = std::sync::Arc::new(status);
+    let status = Arc::new(status);
     let mut server = EspHttpServer::new(&Configuration {
         stack_size: STACK_SIZE,
         max_uri_handlers: MAX_URI_HANDLERS,
@@ -237,7 +313,7 @@ pub fn start(ctx: HttpContext) -> Result<EspHttpServer<'static>> {
         write_json(req, 200, &serde_json::to_vec(&view)?)
     })?;
 
-    let state = light;
+    let state = light.clone();
     server.fn_handler::<anyhow::Error, _>("/api/light", Method::Post, move |mut req| {
         let body = match read_body(&mut req)? {
             Ok(body) => body,
@@ -381,6 +457,100 @@ pub fn start(ctx: HttpContext) -> Result<EspHttpServer<'static>> {
         }
     })?;
 
+    // ---- scènes et programmation
+    let auto = automation.clone();
+    server.fn_handler::<anyhow::Error, _>("/api/automation", Method::Get, move |req| {
+        write_json(req, 200, &serde_json::to_vec(&auto.view())?)
+    })?;
+    let auto = automation.clone();
+    let state = light;
+    server.fn_handler::<anyhow::Error, _>("/api/scenes", Method::Post, move |mut req| {
+        let form: SceneForm = match parse_body(&mut req)? {
+            Ok(form) => form,
+            Err((status, msg)) => return write_json(req, status, &error_json(&msg)),
+        };
+        let mut scene = Scene::from_state(form.id, &form.name, &lock(&state));
+        if let Some(c) = form.color {
+            scene.color = c;
+        }
+        if let Some(b) = form.brightness {
+            scene.brightness = b;
+        }
+        if let Some(e) = form.effect {
+            scene.effect = e;
+        }
+        match auto.save_scene(scene) {
+            Ok(id) => write_json(
+                req,
+                200,
+                &serde_json::to_vec(&serde_json::json!({
+                    "ok": true, "id": id, "message": "Scène enregistrée."
+                }))?,
+            ),
+            Err(e) => write_json(req, 400, &error_json(&e.to_string())),
+        }
+    })?;
+    let auto = automation.clone();
+    server.fn_handler::<anyhow::Error, _>("/api/scenes/delete", Method::Post, move |mut req| {
+        let form: IdForm = match parse_body(&mut req)? {
+            Ok(form) => form,
+            Err((status, msg)) => return write_json(req, status, &error_json(&msg)),
+        };
+        match auto.delete_scene(form.id) {
+            Ok(()) => write_json(req, 200, &ok_json("Scène supprimée.")),
+            Err(e) => write_json(req, 404, &error_json(&e.to_string())),
+        }
+    })?;
+    let auto = automation.clone();
+    server.fn_handler::<anyhow::Error, _>("/api/scenes/apply", Method::Post, move |mut req| {
+        let form: IdForm = match parse_body(&mut req)? {
+            Ok(form) => form,
+            Err((status, msg)) => return write_json(req, status, &error_json(&msg)),
+        };
+        match auto.apply_scene(form.id) {
+            Ok(()) => write_json(req, 200, &ok_json("Scène appliquée.")),
+            Err(e) => write_json(req, 404, &error_json(&e.to_string())),
+        }
+    })?;
+    let auto = automation.clone();
+    server.fn_handler::<anyhow::Error, _>("/api/schedule", Method::Post, move |mut req| {
+        let schedule: Schedule = match parse_body(&mut req)? {
+            Ok(s) => s,
+            Err((status, msg)) => return write_json(req, status, &error_json(&msg)),
+        };
+        match auto.set_schedule(schedule) {
+            Ok(()) => write_json(req, 200, &ok_json("Programme enregistré.")),
+            Err(e) => write_json(req, 400, &error_json(&e.to_string())),
+        }
+    })?;
+    let auto = automation.clone();
+    server.fn_handler::<anyhow::Error, _>("/api/timer", Method::Post, move |mut req| {
+        let form: TimerForm = match parse_body(&mut req)? {
+            Ok(form) => form,
+            Err((status, msg)) => return write_json(req, status, &error_json(&msg)),
+        };
+        match auto.set_timer(form.minutes) {
+            Ok(()) if form.minutes == 0 => write_json(req, 200, &ok_json("Minuterie annulée.")),
+            Ok(()) => write_json(
+                req,
+                200,
+                &ok_json(&format!("Extinction dans {} min.", form.minutes)),
+            ),
+            Err(e) => write_json(req, 400, &error_json(&e.to_string())),
+        }
+    })?;
+    let auto = automation;
+    server.fn_handler::<anyhow::Error, _>("/api/time", Method::Post, move |mut req| {
+        let form: TimezoneForm = match parse_body(&mut req)? {
+            Ok(form) => form,
+            Err((status, msg)) => return write_json(req, status, &error_json(&msg)),
+        };
+        match auto.set_timezone(&form.tz) {
+            Ok(()) => write_json(req, 200, &ok_json("Fuseau horaire enregistré.")),
+            Err(e) => write_json(req, 400, &error_json(&e.to_string())),
+        }
+    })?;
+
     if let Some(hooks) = debug {
         let DebugHooks {
             wifi_disconnect,
@@ -439,6 +609,17 @@ fn read_body(req: &mut Request<&mut EspHttpConnection<'_>>) -> Result<Result<Vec
     let mut buf = vec![0; len];
     req.read_exact(&mut buf)?;
     Ok(Ok(buf))
+}
+
+/// Lit et désérialise le corps JSON. `Err((code HTTP, message))` si absent, trop long ou invalide.
+fn parse_body<T: serde::de::DeserializeOwned>(
+    req: &mut Request<&mut EspHttpConnection<'_>>,
+) -> Result<Result<T, (u16, String)>> {
+    let body = match read_body(req)? {
+        Ok(body) => body,
+        Err(status) => return Ok(Err((status, "corps absent ou trop long".to_owned()))),
+    };
+    Ok(serde_json::from_slice(&body).map_err(|e| (400, format!("JSON invalide : {e}"))))
 }
 
 fn write_json(req: Request<&mut EspHttpConnection<'_>>, status: u16, body: &[u8]) -> Result<()> {
