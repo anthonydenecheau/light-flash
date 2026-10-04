@@ -1,23 +1,29 @@
 # BACKLOG — light-flash
 
-Préconisations issues de l'analyse de la codebase (branche `master` au commit `b3f2b42` et branche
-`origin/feature/connect2Wifi`). Priorités : **P0** bloquant / à faire en premier, **P1** important,
-**P2** souhaitable, **P3** idée.
+Préconisations issues de l'analyse initiale (branche `master` au commit `b3f2b42`, branche
+`origin/feature/connect2Wifi`), tenues à jour au fil des réalisations. Priorités : **P0** bloquant /
+à faire en premier, **P1** important, **P2** souhaitable, **P3** idée. Les items cochés gardent leur
+texte comme trace des décisions.
 
-État des lieux en une phrase : le dépôt contient quatre crates indépendantes copiées du template
-`esp-rs/std-training`, un serveur BLE de démonstration qui ne pilote aucune LED, et une branche
-non mergée qui explore un portail Wi-Fi de provisioning. Il n'y a pas encore de « firmware d'applique ».
+**État au 2026-10-04 (relecture complète).** Fait et vérifié sur carte : workspace Cargo unique,
+tâche lumière, API et page HTTP, persistance NVS, reconnexion Wi-Fi avec repli point d'accès,
+mDNS et nom DHCP, provisioning Improv sur BLE, manuel utilisateur (chapitre 1). Prochaines
+priorités, dans l'ordre : (1) matériel du ruban (§6, achats puis mise en route), (2) mémoire avec
+BLE actif (§4.3), (3) mise à jour des versions (§2.3), (4) partitions OTA et CI (§5.3, §5.6),
+(5) devcontainer (§5.5). Deux questions en attente du propriétaire : batterie ou non (§1) et
+licence (§2.3).
 
 ---
 
 ## 1. Décisions à prendre (préalable à tout le reste)
 
-- [ ] **P0 — Spécifier fonctionnellement l'applique.** Rien dans le code ne dit ce que la lampe doit
-  faire. Fixé le 2026-10-04 : ruban WS2812B 144 LED comme source lumineuse (§6), LED embarquée
-  conservée comme voyant d'état, provisioning Improv (§2.4). Reste à fixer : commandes (on/off,
-  couleur, luminosité, effets), canal de pilotage (BLE, Wi-Fi, bouton BOOT GPIO9), luminosité
-  maximale autorisée (§6.1). Décidé le 2026-10-04 : au démarrage la lampe restaure son dernier
-  état (voir §2.2 pour l'option « toujours allumer »).
+- [ ] **P1 — Spécifier fonctionnellement l'applique.** Fixé le 2026-10-04 : ruban WS2812B 144 LED
+  comme source lumineuse (§6) ; commandes marche/arrêt, couleur, luminosité, trois effets (uni,
+  respiration, arc-en-ciel) ; pilotage par la page et l'API HTTP ; provisioning Improv (§2.4) ;
+  BOOT réservé à l'autorisation Improv et au reset usine ; la lampe restaure son dernier état au
+  démarrage (§2.2 pour l'option « toujours allumer »). Reste à fixer : luminosité maximale et
+  budget de courant avec le ruban (§6.1), effets supplémentaires souhaités, pilotage BLE direct
+  ou non (§2.2).
 - [x] **Décidé le 2026-10-04 — Provisioning Wi-Fi par Improv Wi-Fi sur BLE** (détail en §2.4).
   `master` faisait du BLE, `feature/connect2Wifi` de l'AP Wi-Fi + HTTP ; faire tourner les deux
   radios en permanence sur un ESP32-C3 (≈400 Ko de SRAM) est possible mais serré. Le choix
@@ -34,10 +40,9 @@ non mergée qui explore un portail Wi-Fi de provisioning. Il n'y a pas encore de
   (`source`, `percent`, `voltage`, `current_ma`, `remaining_min`), jauge et temps restant dans la
   page, masqués sans batterie. Sans batterie : afficher la consommation estimée du ruban, déjà
   calculée à chaque trame par `power::estimate_ma`.
-- [ ] **P1 — Confirmer le choix `std`/ESP-IDF** plutôt qu'une migration `no_std` (`esp-hal` +
-  `esp-wifi` + `embassy`, ce vers quoi pointe `REFERENCES.md`). Recommandation : rester sur ESP-IDF
-  tant que BLE + Wi-Fi + HTTP + NVS + OTA sont nécessaires ; la coexistence BLE/Wi-Fi et l'OTA y sont
-  matures. Supprimer la ligne trompeuse de `REFERENCES.md`.
+- [x] **Choix `std`/ESP-IDF confirmé** (2026-10-04) : BLE, Wi-Fi, HTTP, mDNS et NVS tournent
+  ensemble sur ESP-IDF ; la ligne trompeuse vers `esp-wifi` a disparu de `REFERENCES.md`. Une
+  migration `no_std` (`esp-hal`, `embassy`) n'est pas à l'ordre du jour.
 
 ---
 
@@ -53,33 +58,36 @@ Réalisé : workspace racine (`Cargo.toml`, `.cargo/config.toml`, `rust-toolchai
 - [x] **Build cible vérifié le 2026-10-04** : `make build-all` OK (ESP-IDF v5.3.2 compilé en
   ~3 min après téléchargement, ~3,7 Go dans `~/.espressif`), `light-flash` flashé, exemple
   `ws2812` flashé et journal de démarrage lu via `make example ... SECS=35`.
-- [ ] **P2** — Les crates `ble`, `http-server`, `storage` de l'arborescence ci-dessous seront créées
-  quand leur code existera ; `partitions.csv` et `.github/` relèvent du §5.
+- [x] Crates `http-server`, `storage` et `improv` créées (2026-10-04). Le BLE n'est pas une crate
+  séparée : le protocole est dans `crates/improv` (sans ESP) et la glu NimBLE dans
+  `firmware/light-flash/src/provisioning.rs`. Restent `partitions.csv`, `LICENSE`, `.github/`
+  (§5, §2.3).
 
-Arborescence cible :
+Arborescence réelle au 2026-10-04 (en italique : à venir) :
 
 ```
 light-flash/                      # racine = workspace
 ├── Cargo.toml                    # [workspace] members, [workspace.dependencies], [profile.*]
-├── Cargo.lock                    # COMMITÉ (voir 2.3)
-├── .cargo/config.toml            # unique : target, ldproxy, runner espflash, ESP_IDF_VERSION…
-├── rust-toolchain.toml           # unique : nightly-2025-01-01 + rust-src
-├── sdkconfig.defaults            # unique : union BT NimBLE + Wi-Fi + LWIP hostname
-├── partitions.csv                # table de partitions OTA (voir 5.3)
-├── CLAUDE.md  BACKLOG.md  README.md  LICENSE
+├── Cargo.lock                    # commité
+├── .cargo/config.toml            # target, ldproxy, runner espflash, ESP_IDF_VERSION, résolveur MSRV
+├── rust-toolchain.toml           # nightly-2025-01-01 + rust-src
+├── sdkconfig.defaults            # NimBLE périphérique, nom DHCP, tampons Wi-Fi, piles
+├── cfg.toml.example              # identifiants de secours et mot de passe du point d'accès
+├── Makefile                      # point d'entrée unique
+├── CLAUDE.md  BACKLOG.md  README.md  HARDWARE.md  MANUEL.md  REFERENCES.md   (LICENSE à venir)
 ├── firmware/
-│   ├── light-flash/              # binaire principal (main.rs mince : câblage des tâches)
-│   └── hardware-check/           # binaire de recette carte (conservé tel quel)
+│   ├── light-flash/              # main.rs (câblage), light_task, persistence, network, provisioning
+│   └── hardware-check/           # recette carte (Wi-Fi + LED), conservé tel quel
 ├── crates/
-│   ├── light-core/               # DOMAINE, sans dépendance ESP : état de la lampe, commandes,
-│   │                             #   effets, correction gamma. Testable sur l'hôte.
-│   ├── rgb-led/                  # driver WS2812 (RMT), N pixels
-│   ├── wifi/                     # STA + AP + reconnexion (fusion de wifi et wifi_ap)
-│   ├── ble/                      # service GATT « light » (esp32-nimble)
-│   ├── http-server/              # API HTTP + page de provisioning
-│   └── storage/                  # NVS : identifiants Wi-Fi, dernier état lampe
-├── .devcontainer/                # réécrit (voir 5.5)
-└── .github/workflows/            # CI build + clippy (voir 5.6)
+│   ├── light-core/               # domaine sans ESP : état, commandes, effets, gamma, puissance,
+│   │                             #   API JSON, persistance différée, reconnexion, indications, bouton
+│   ├── improv/                   # protocole Improv Wi-Fi BLE sans ESP
+│   ├── rgb-led/                  # driver WS2812 (RMT), N pixels, exemples de diagnostic
+│   ├── wifi/                     # station et point d'accès sur un driver partagé
+│   ├── http-server/              # page de pilotage, API JSON, formulaire Wi-Fi, hooks debug
+│   └── storage/                  # NVS : identifiants Wi-Fi, état de la lampe, reset usine
+├── .devcontainer/                # obsolète, à réécrire (§5.5)
+└── .github/workflows/            # à venir (§5.6)
 ```
 
 Notes de mise en œuvre :
@@ -103,7 +111,8 @@ Notes de mise en œuvre :
 - [x] `light-core` créé le 2026-10-04 (`crates/light-core`) : `LightCommand`, `LightState`,
   `Effect` (Solid, Breathe, Rainbow), `Renderer` (horloge + rendu d'une trame), `Gamma`,
   `hsv_to_rgb`, et `power::{estimate_ma, limit}` pour le plafond de courant. Zéro dépendance ESP ;
-  23 tests sur l'hôte via `make test`.
+  51 tests sur l'hôte via `make test` au 2026-10-04 (avec API, persistance, reconnexion,
+  indications, bouton).
 - [x] **`light-core` branché dans `firmware/light-flash`** (2026-10-04) : tâche lumière
   (`light_task.rs`) propriétaire du driver, 50 images/s, `power::limit` avant envoi, écriture sur
   les LED seulement quand la trame change. Modèle retenu : `SharedState = Arc<Mutex<LightState>>`
@@ -118,10 +127,10 @@ Notes de mise en œuvre :
   prévoir une option « toujours allumer à la mise sous tension » (réglable depuis la page).
 - [ ] **P2 — `LED_COUNT` et `MAX_MILLIAMPS`** (1 LED, 500 mA) à passer à 144 et au budget de
   l'alimentation quand le ruban sera câblé (§6).
-- Service GATT « light » proposé (UUID 128 bits custom) : `power` (u8, R/W/N), `color` (3 octets
-  RGB, R/W/N), `brightness` (u8, R/W/N), `effect` (u8, R/W/N), `status` (N). Le provisioning Wi-Fi
-  n'y figure pas : il passe par le service Improv standard (§2.4), exposé par le même serveur
-  NimBLE. Nom d'advertising `light-flash`, pas « ESP32 Server ».
+- [ ] **P2 — Pilotage BLE direct** : service GATT « light » (UUID 128 bits custom) : `power`
+  (u8, R/W/N), `color` (3 octets RGB, R/W/N), `brightness` (u8, R/W/N), `effect` (u8, R/W/N),
+  `status` (N), exposé par le même serveur NimBLE que le service Improv (§2.4). Utile seulement
+  pour piloter sans Wi-Fi ; aujourd'hui tout passe par HTTP. À décider avec la spécification (§1).
 
 ### 2.3 Hygiène du dépôt (P1)
 
@@ -203,9 +212,11 @@ bit 0 identify, bit 1 device info, bit 2 scan, bit 3 hostname, bit 4 device name
    et l'adresse IP, LED verte 2 s puis retour à l'état lampe. Échec : Error State `0x03`, retour à
    `0x02`, LED rouge 2 s puis bleue fixe ; rien n'est écrit en NVS.
 5. Après provisioning, l'advertising Improv s'arrête ; le service « light » (§2.2) reste disponible
-   en BLE pour le pilotage.
-6. Re-provisioning : appui long 5 s sur BOOT efface la NVS et redémarre ; N échecs consécutifs de
-   reconnexion STA (ex. 10) rouvrent aussi la fenêtre Improv sans effacer les identifiants.
+   en BLE pour le pilotage. *Non fait : l'advertising reste actif (voir P2 ci-dessous), pas de
+   service de pilotage BLE.*
+6. Re-provisioning : appui long 5 s sur BOOT efface la NVS et redémarre (*fait*) ; N échecs
+   consécutifs de reconnexion STA rouvrent aussi la fenêtre Improv sans effacer les identifiants
+   (*non nécessaire : l'advertising est permanent, un appui court sur BOOT suffit*).
 
 **Implémentation** — fait le 2026-10-04
 
@@ -252,13 +263,14 @@ bit 0 identify, bit 1 device info, bit 2 scan, bit 3 hostname, bit 4 device name
 
 Le `main.rs` de démonstration BLE a été remplacé le 2026-10-04 (tâche lumière + Wi-Fi + HTTP) ;
 ses défauts (aucun pilotage de LED, logger non initialisé, `unwrap()` dans un callback NimBLE,
-`main()` sans `Result`) disparaissent avec lui. À reprendre lors de l'implémentation d'Improv
-(§2.4) : caractéristiques en `WRITE` + `on_write`, aucun `unwrap()` dans les callbacks NimBLE.
+`main()` sans `Result`) disparaissent avec lui. Le BLE réintroduit par Improv (`provisioning.rs`)
+n'a aucun `unwrap()` dans les callbacks : `on_write` ne fait que relayer vers un canal.
 - [x] **Dépendances inutiles** (fait le 2026-10-04) : `heapless` et la dépendance directe à
   `esp-idf-sys` retirées, `link_patches` appelé via `esp_idf_svc::sys`, section `[features]` vide
   supprimée.
-- [ ] **P2 — Sécurité BLE** (pour Improv, §2.4) : appairage « Just Works » avec bonding
-  (`ble_device.security().set_auth(...)`) et `CONFIG_BT_NIMBLE_NVS_PERSIST=y`.
+- [ ] **P3 — Sécurité BLE** : Improv ne prévoit pas d'appairage, la protection est l'appui sur
+  BOOT. Un appairage avec bonding (`ble_device.security().set_auth(...)`,
+  `CONFIG_BT_NIMBLE_NVS_PERSIST=y`) n'aurait de sens qu'avec un service de pilotage BLE (§2.2).
 - [ ] **P2 — Sécurité HTTP** : aucune authentification sur `/api/light` ni `/connect`. Acceptable
   sur le point d'accès de secours (mot de passe WPA2) et sur un réseau domestique ; prévoir au
   minimum un jeton si la lampe est exposée au-delà.
@@ -328,9 +340,8 @@ intégration dans `master` sous `crates/http-server` et `crates/wifi`. La branch
   avec message, 20 requêtes en 0,8 s, `/connect` → NVS → redémarrage → reconnexion en 12 s ;
   après `make erase` la source d'identifiants est `cfg.toml`, puis la NVS après `/connect`
   (vérifié en retirant `cfg.toml` le temps d'un flash).
-- [ ] **P2 — Hostname `light.local`** : `CONFIG_LWIP_LOCAL_HOSTNAME` n'affecte que le nom DHCP.
-  Pour mDNS, ajouter le composant `espressif/mdns` via
-  `[package.metadata.esp-idf-sys.extra_components]` et utiliser `esp_idf_svc::mdns::EspMdns`.
+- [x] **Hostname** (fait le 2026-10-04) : `light-flash.local` par mDNS (composant
+  `espressif/mdns`, `EspMdns`) et `light-flash` par DHCP (`CONFIG_LWIP_LOCAL_HOSTNAME`), voir §5.4.
 - [ ] **P2 — `embedded-svc` en dépendance directe** de `http-server` (traits `Headers`, `Read`,
   `Write`) : vérifier si `esp_idf_svc::http` / `esp_idf_svc::io` les ré-exportent en 0.53 et
   supprimer la dépendance lors de la mise à jour.
@@ -353,14 +364,15 @@ intégration dans `master` sous `crates/http-server` et `crates/wifi`. La branch
 
 - [ ] **P1 — `CONFIG_COMPILER_OPTIMIZATION_SIZE=y`** : par défaut ESP-IDF compile son code C en
   `-Og` ; `-Os` réduit sensiblement la partie IDF du binaire.
-- [ ] **P1 — Désactiver les composants IDF inutiles** dans `sdkconfig.defaults` :
-  `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n` tant qu'il n'y a pas de TLS sortant (≈ 60–80 Ko),
-  `CONFIG_BT_NIMBLE_ROLE_CENTRAL=n`, `CONFIG_BT_NIMBLE_ROLE_OBSERVER=n` (la lampe est périphérique
-  seulement), `CONFIG_LOG_DEFAULT_LEVEL_WARN=y` en release.
+- [x] **Rôles NimBLE** : `CONFIG_BT_NIMBLE_ROLE_CENTRAL=n`, `CONFIG_BT_NIMBLE_ROLE_OBSERVER=n`
+  (2026-10-04, la lampe est périphérique seulement).
+- [ ] **P1 — Désactiver les autres composants IDF inutiles** dans `sdkconfig.defaults` :
+  `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n` tant qu'il n'y a pas de TLS sortant (≈ 60–80 Ko de
+  flash), `CONFIG_LOG_DEFAULT_LEVEL_WARN=y` en release.
 - [ ] **P2 — Profil release Rust** : ajouter `lto = "fat"`, `codegen-units = 1`, `strip = true`
   (n'affecte que la partie Rust ; `panic = "abort"` est déjà imposé par `build-std`).
-- [ ] **P2 — Vérifier la taille** avec `espflash save-image` + `ls -l` ou `cargo espflash
-  save-image --chip esp32c3` et consigner une valeur de référence par version.
+- [x] **Taille mesurée** (2026-10-04, `make image`) : 1,75 Mo en debug, 1,51 Mo en release avec
+  BLE + Wi-Fi + HTTP + mDNS. À consigner à chaque version (CI, §5.6).
 
 ### 4.3 Exécution
 
@@ -377,8 +389,8 @@ intégration dans `master` sous `crates/http-server` et `crates/wifi`. La branch
   (`provision` 16 Ko, `network` 12 Ko) après mesure du pic d'utilisation.
 - [x] **Usure de la flash** : écriture différée de 2 s et seulement si l'état change
   (`SaveScheduler`, 2026-10-04).
-- [ ] **P2 — Rendu couleur** : appliquer une correction gamma (table 256 entrées) avant envoi aux
-  WS2812 pour une luminosité perçue linéaire.
+- [x] **Rendu couleur** : correction gamma 2,2 (table de 256 entrées, `light_core::color::Gamma`)
+  appliquée par le `Renderer` (2026-10-04).
 - [ ] **P3 — Économie d'énergie** : `wifi.set_ps(...)` (modem sleep) si la latence BLE/HTTP reste
   acceptable ; sans intérêt tant que l'applique est alimentée par USB.
 - [ ] **P3 — Tick FreeRTOS** : `CONFIG_FREERTOS_HZ=1000` (commenté dans `sdkconfig.defaults`) si
@@ -403,10 +415,8 @@ moniteur passe par le `Makefile`** à la racine (`make help`). Ne pas documenter
   reconnexion de session pour que `dialout` soit effectif (le Makefile contourne via `sg`).
 - [x] Makefile adapté au workspace (2026-10-04) : `-p CRATE`, `build-all`, `make test` sur les
   crates hôte, PATH de `~/.cargo/bin` exporté pour les shells non interactifs.
-- [ ] **P2 — README** : la machine de développement est désormais sous **Ubuntu natif** (plus de
-  Windows/WSL2). Retirer les instructions `usbipd` et `chmod 777` du README, ou les reléguer dans
-  une annexe « historique WSL2 ». Sous Ubuntu la carte apparaît directement en `/dev/ttyACM0` ;
-  seuls le groupe `dialout` ou la règle udev ci-dessus sont nécessaires.
+- [x] **README** réécrit sans les instructions WSL2 (2026-10-04) : Ubuntu natif, carte en
+  `/dev/ttyACM0`, accès par le groupe `dialout` ou la règle udev.
 
 ### 5.2 Commandes de flash
 
@@ -476,8 +486,9 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
      lampe »), avec la méthode Livebox.
   4. [x] **Improv (§2.4, fait le 2026-10-04)** : à la fin du provisioning, la lampe renvoie
      `http://light-flash.local/` et `http://<ip>/`, l'appli du téléphone les ouvre directement.
-  5. **Page installable (PWA)** : manifeste + icône pour un raccourci « application » sur le
-     téléphone ; ne résout pas l'adresse, à combiner avec 1 à 3.
+  5. [ ] **P3 — Page installable (PWA)** : manifeste + icône pour un raccourci « application »
+     sur le téléphone ; ne résout pas l'adresse, à combiner avec 1 à 3. En attendant, le manuel
+     explique « Ajouter à l'écran d'accueil ».
   6. [x] **Domotique et accès distant** : documentés dans le README (Home Assistant via mDNS,
      VPN ; jamais d'ouverture de port). L'intégration Home Assistant elle-même reste à faire (§7).
 
@@ -498,8 +509,8 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
   met en cache `~/.espressif` + `~/.cargo` + `target/`, et publie `dist/*.bin` en artefact.
   Le premier run dure 15–30 min (build ESP-IDF), les suivants quelques minutes grâce au cache.
 - [ ] **P2 — Release** : sur tag `vX.Y.Z`, attacher l'image mergée et `partitions.csv` à la release
-  GitHub ; versionner `light-flash` via `env!("CARGO_PKG_VERSION")` exposé dans la caractéristique
-  BLE `status` et sur `/api/status`.
+  GitHub. La version (`CARGO_PKG_VERSION`) est déjà renvoyée par Improv (device info) ; l'exposer
+  aussi sur `/api/status` avec le tas libre et l'état réseau.
 
 ---
 
@@ -523,8 +534,8 @@ voyant GPIO2 (RMT canal 0), ruban GPIO3 (RMT canal 1), bouton BOOT GPIO9.
 
 ### 6.1 Plan de mise en route
 
-- [ ] **P0 — Étape 0, sans ruban** : étendre `rgb-led` à N pixels (§3) et valider sur la LED
-  embarquée avec N = 1.
+- [x] **Étape 0, sans ruban** : `rgb-led` étendu à N pixels et validé sur la LED embarquée
+  (2026-10-04). Pour le ruban : `LED_COUNT` et `MAX_MILLIAMPS` dans `light_task.rs`, broche GPIO3.
 - [ ] **P0 — Étape 1, câblage hors tension** : monter selon `HARDWARE.md` §5 ; au multimètre, vérifier l'absence de
   court-circuit entre 5 V et GND et la continuité des masses ; mettre sous tension sans la carte
   et mesurer 5 V aux bornes du ruban.
@@ -535,11 +546,10 @@ voyant GPIO2 (RMT canal 0), ruban GPIO3 (RMT canal 1), bouton BOOT GPIO9.
 - [ ] **P1 — Étape 4, puissance** : rampe de blanc par paliers de 10 % en touchant régulièrement
   le ruban et l'alimentation ; noter le palier au-delà duquel le bout du ruban jaunit (chute de
   tension) et décider de l'injection en bout.
-- [ ] **P1 — Plafond de courant dans le firmware** : estimer le courant d'une trame (par LED :
-  (r + g + b) / 765 × 60 mA, plus 1 mA de veille) et réduire la luminosité globale pour rester sous
-  un budget configurable (ex. 5 A), comme `setMaxPowerInVoltsAndMilliamps` de FastLED. C'est la
-  protection principale de l'alimentation et du ruban ; à placer dans `light-core`, donc testable
-  sur l'hôte.
+- [x] **Plafond de courant dans le firmware** : `light_core::power::limit` (par LED :
+  (r + g + b) / 765 × 60 mA, plus 1 mA de veille), appliqué à chaque trame avant envoi, testé sur
+  l'hôte (2026-10-04). Le budget (`MAX_MILLIAMPS`, 500 mA aujourd'hui) sera fixé avec
+  l'alimentation du ruban.
 - [ ] **P2 — Montage final** : perfboard ou petite PCB avec borniers, fusible 10 A, profilé
   aluminium, boîtier pour l'alimentation ; carte alimentée par sa broche 5V, USB débranché.
 
@@ -547,7 +557,8 @@ voyant GPIO2 (RMT canal 0), ruban GPIO3 (RMT canal 1), bouton BOOT GPIO9.
 
 ## 7. Idées (P3)
 
-- Bouton BOOT (GPIO9) comme interrupteur physique / cycle d'effets.
+- Bouton BOOT (GPIO9) comme interrupteur physique / cycle d'effets : en conflit avec son usage
+  actuel (autorisation Improv, reset usine) ; prévoir plutôt un bouton dédié sur l'applique.
 - Capteurs embarqués de la DevKit-RUST-1 (IMU ICM-42670-P et SHTC3 sur I2C, SDA GPIO10 / SCL GPIO8) :
   « tap » pour allumer, inclinaison pour varier l'intensité, couleur fonction de la température.
 - Intégration domotique : Home Assistant via MQTT (`esp_idf_svc::mqtt`) ou ESPHome-like API.

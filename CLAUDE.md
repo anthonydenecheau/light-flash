@@ -23,6 +23,9 @@ et ne contiennent **aucune mention de Claude** : pas de `Co-Authored-By`, pas de
   passe jamais par la breadboard ni par la broche 5V de la carte quand l'USB est branché.
 - Aucun prototype construit au 2026-10-04. Guide de montage complet (contraintes, achats, câblage,
   sécurité, mise en route) dans `HARDWARE.md` ; tâches correspondantes dans `BACKLOG.md` §6.
+- `MANUEL.md` est le manuel **utilisateur** (pas développeur) : français, sans commande ni jargon,
+  à tenir à jour quand un comportement visible change (couleurs de signalisation, boutons,
+  adresses, procédure de configuration).
 
 ## Organisation du dépôt
 

@@ -8,6 +8,7 @@ Firmware en Rust (`std`, ESP-IDF v5.3.2).
 | `CLAUDE.md` | Chaîne de compilation, conventions, pièges connus |
 | `BACKLOG.md` | Préconisations et tâches : architecture, bugs, optimisations, déploiement |
 | `HARDWARE.md` | Prototype du ruban : achats, câblage, sécurité, mise en route |
+| `MANUEL.md` | Manuel utilisateur : mise en service, puis interface et dépannage |
 | `REFERENCES.md` | Liens utiles |
 
 ## Organisation
