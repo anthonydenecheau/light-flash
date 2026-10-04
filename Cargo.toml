@@ -11,6 +11,10 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+# MSRV alignée sur le nightly épinglé (rustc 1.85.0-nightly). Avec
+# resolver.incompatible-rust-versions = "fallback" (.cargo/config.toml), cargo choisit des
+# versions de dépendances compatibles au lieu des plus récentes.
+rust-version = "1.84"
 
 # Une seule version de chaque dépendance pour tout le workspace.
 # Les versions exactes sont figées par Cargo.lock, qui est commité.

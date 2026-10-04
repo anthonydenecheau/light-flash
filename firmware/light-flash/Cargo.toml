@@ -2,6 +2,7 @@
 name = "light-flash"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [[bin]]
 name = "light-flash"

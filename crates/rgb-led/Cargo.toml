@@ -2,6 +2,7 @@
 name = "rgb-led"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors = ["Sergio Gasquez <sergio.gasquez@gmail.com>"]
 
 [dependencies]

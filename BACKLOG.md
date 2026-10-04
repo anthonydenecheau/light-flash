@@ -39,8 +39,9 @@ Réalisé : workspace racine (`Cargo.toml`, `.cargo/config.toml`, `rust-toolchai
 (`esp-idf-svc 0.51.0`, `esp-idf-hal 0.45.2`, `esp-idf-sys 0.36.1`, `esp32-nimble 0.10.2`),
 `Cargo.lock` commité, Makefile adapté (`-p CRATE`, `build-all`, `test` sur l'hôte).
 
-- [ ] **P0 — Vérifier le build cible** (`make build-all`) dès que `make setup-system` sera passé :
-  ce sera la première compilation d'ESP-IDF sur cette machine.
+- [x] **Build cible vérifié le 2026-10-04** : `make build-all` OK (ESP-IDF v5.3.2 compilé en
+  ~3 min après téléchargement, ~3,7 Go dans `~/.espressif`), `light-flash` flashé, exemple
+  `ws2812` flashé et journal de démarrage lu via `make example ... SECS=35`.
 - [ ] **P2** — Les crates `ble`, `http-server`, `storage` de l'arborescence ci-dessous seront créées
   quand leur code existera ; `partitions.csv` et `.github/` relèvent du §5.
 
@@ -81,6 +82,10 @@ Notes de mise en œuvre :
   ESP-IDF via `links`, une dépendance directe à `esp-idf-sys` n'est pas nécessaire.
 - Les tests hôte utilisent `cargo +stable`, qui ignore `[unstable] build-std` : pas besoin d'un
   workspace séparé pour `light-core`.
+- `Cargo.lock` doit être résolu par le nightly du projet. Un lock généré par cargo stable 1.97 a
+  tiré `uuid 1.27`, `globset 0.4.20`, `home 0.5.12`, `ignore 0.4.33` (rustc ≥ 1.88). Correctifs :
+  `rust-version = "1.84"` + `resolver.incompatible-rust-versions = "fallback"`, et `ignore`
+  épinglé à 0.4.23 (sa `rust-version` n'est pas déclarée correctement).
 
 ### 2.2 Séparer domaine et périphériques (P1)
 
@@ -128,7 +133,11 @@ Notes de mise en œuvre :
   | `rgb` | 0.8.53 | 0.8.53 | 0.8.92-rc est une pré-version, ne pas la prendre |
   | ESP-IDF | v5.3.2 | v5.5.x (6.0 trop récent) | recompilation complète (15–30 min) |
   | nightly | 2025-01-01 | nightly récent, **daté** | aucune date imposée par les crates (MSRV 1.82 satisfait) ; choisir la date du jour de la mise à jour et la figer |
-  | `espflash` | non installé | 4.6.0 | vérifier les options utilisées par le Makefile (`--chip`, `save-image --merge`) avec la CLI 4.x |
+  | `espflash` | 4.6.0 | 4.6.0 | options du Makefile vérifiées (`--chip`, `save-image --merge`, `monitor --non-interactive`) |
+
+  Constat du 2026-10-04 : le nightly de janvier 2025 oblige déjà à brider des dépendances
+  transitives (résolveur MSRV, `ignore` épinglé) ; chaque `cargo update` futur risque d'en
+  réveiller d'autres. Argument supplémentaire pour faire la mise à jour tôt.
 
   Ordre : 1) `make build-all` + `hardware-check` sur carte avec l'ensemble actuel pour valider
   l'environnement ; 2) un commit dédié qui passe crates, ESP-IDF v5.5 et nightly ensemble, puis
@@ -346,11 +355,9 @@ moniteur passe par le `Makefile`** à la racine (`make help`). Ne pas documenter
   `rust-toolchain.toml`), `ldproxy`, `espflash`, `cargo-espflash`, groupe `dialout` et règle udev
   sur le VID/PID `303a:1001`. `espup` n'est **pas** nécessaire (RISC-V uniquement).
   `make doctor` vérifie l'installation et détecte la carte.
-- [ ] **P0 — Terminer `make setup`** : au 2026-10-04 le nightly épinglé (avec rustfmt et clippy),
-  la toolchain stable et `ldproxy` sont installés. Restent `make setup-system` (cmake, ninja,
-  clang, libudev) et `make setup-serial`, qui demandent `sudo`, puis `make setup-rust` pour
-  `espflash` / `cargo-espflash` (ils ont besoin de libudev), et enfin `make build-all` (première
-  compilation d'ESP-IDF : plusieurs minutes, ~2 Go dans `~/.espressif`).
+- [x] **`make setup` terminé le 2026-10-04** : paquets, nightly (rustfmt, clippy), stable,
+  `ldproxy`, `espflash 4.6.0`, `cargo-espflash 4.6.0`, groupe `dialout` + règle udev. Reste la
+  reconnexion de session pour que `dialout` soit effectif (le Makefile contourne via `sg`).
 - [x] Makefile adapté au workspace (2026-10-04) : `-p CRATE`, `build-all`, `make test` sur les
   crates hôte, PATH de `~/.cargo/bin` exporté pour les shells non interactifs.
 - [ ] **P2 — README** : la machine de développement est désormais sous **Ubuntu natif** (plus de
@@ -371,8 +378,13 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
   (bootloader + partitions + application fusionnés), flashable avec `espflash write-bin 0x0 <bin>`
   ou esp-web-flash sans toolchain Rust sur la machine cible. À brancher en CI (§5.6).
 - [x] **Effacement complet** avant un changement de table de partitions : `make erase`.
-- [x] **Moniteur seul** : `make monitor` ; les backtraces de panique sont symbolisées
-  automatiquement avec `make run` (ELF connu d'espflash).
+- [x] **Moniteur seul** : `make monitor` (`--elf` passé pour symboliser les backtraces) ;
+  `SECS=<n>` borne la durée et passe en mode non interactif (obligatoire sans terminal).
+- [ ] **P2 — Bootloader cohérent** : espflash 4.6 flashe son propre bootloader de 2e étage
+  (ESP-IDF v6.1-beta, visible dans le journal de démarrage) alors que l'application est bâtie
+  sur v5.3.2. Ça fonctionne, mais pour un firmware distribué, passer `--bootloader` avec celui
+  produit par esp-idf-sys (`target/.../esp-idf-sys-*/out/build/bootloader/bootloader.bin`) dans
+  les cibles `flash` et `image`.
 
 ### 5.3 Table de partitions et OTA
 

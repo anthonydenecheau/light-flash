@@ -18,6 +18,7 @@ CRATE   ?= light-flash
 PORT    ?=
 RELEASE ?= 0
 EX      ?=
+SECS    ?=   # durée max du moniteur série (run, example, monitor) ; vide = illimité
 CHIP    := esp32c3
 TARGET  := riscv32imc-esp-espidf
 DIST    := dist
@@ -50,6 +51,18 @@ endif
 
 ELF := target/$(TARGET)/$(PROFILE)/$(CRATE)
 
+# Accès au port série : si l'utilisateur vient d'être ajouté au groupe dialout (make setup-serial)
+# sans s'être reconnecté, `sg dialout -c` donne l'accès tout de suite.
+IN_DIALOUT := $(filter dialout,$(shell id -nG))
+CAN_SG     := $(shell grep -qE '^dialout:.*[:,]$(USER)(,|$$)' /etc/group && echo yes)
+SERIAL_SH  := $(if $(IN_DIALOUT),bash -c,$(if $(CAN_SG),sg dialout -c,bash -c))
+# Moniteur borné dans le temps (CI, agents) : `timeout` signale tout le groupe de processus,
+# donc espflash libère le port ; le code 124 (délai atteint) n'est pas une erreur.
+TIMEOUT    := $(if $(SECS),timeout $(SECS) ,)
+TIMEOUT_OK := $(if $(SECS), || [ $$? -eq 124 ],)
+# Sans terminal (CI, agents), espflash a besoin de --non-interactive pour son moniteur.
+NONINT     := $(if $(SECS),--non-interactive,)
+
 # hardware-check exige cfg.toml (identifiants Wi-Fi) à la racine : sans ce fichier, son build.rs
 # fait échouer tout le workspace, on l'exclut donc des cibles globales.
 WS_EXCLUDE := $(if $(wildcard cfg.toml),,--exclude hardware-check)
@@ -62,7 +75,7 @@ WS_EXCLUDE := $(if $(wildcard cfg.toml),,--exclude hardware-check)
 help: ## Affiche cette aide
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo
-	@echo "Variables : CRATE=$(CRATE) ($(CRATES))  RELEASE=$(RELEASE)  PORT=$(PORT)  EX=$(EX)"
+	@echo "Variables : CRATE=$(CRATE) ($(CRATES))  RELEASE=$(RELEASE)  PORT=$(PORT)  EX=$(EX)  SECS=$(SECS)"
 
 # ---- Installation (Ubuntu) -------------------------------------------------
 setup: setup-system setup-rust setup-serial doctor ## Installe tout : paquets, toolchain Rust, outils ESP, accès série
@@ -130,25 +143,25 @@ clean: ## Nettoie target/ et dist/
 	rm -rf $(DIST)
 
 # ---- Flash / moniteur ------------------------------------------------------
-run: ## Compile, flashe et ouvre le moniteur série (= cargo run, runner espflash)
-	cargo run -p $(CRATE) $(CARGO_FLAGS) -- $(PORT_FLAG)
+run: ## Compile, flashe et ouvre le moniteur série (= cargo run ; SECS=30 pour le borner)
+	$(SERIAL_SH) '$(TIMEOUT)cargo run -p $(CRATE) $(CARGO_FLAGS) -- $(PORT_FLAG) $(NONINT)$(TIMEOUT_OK)'
 
 flash: build ## Flashe l'ELF sans ouvrir le moniteur
-	espflash flash --chip $(CHIP) $(PORT_FLAG) $(ELF)
+	$(SERIAL_SH) 'espflash flash --chip $(CHIP) $(PORT_FLAG) $(ELF)'
 
-monitor: ## Moniteur série seul
-	espflash monitor $(PORT_FLAG)
+monitor: ## Moniteur série seul (SECS=30 pour le borner)
+	$(SERIAL_SH) '$(TIMEOUT)espflash monitor $(PORT_FLAG) $(NONINT) --elf $(ELF)$(TIMEOUT_OK)'
 
 erase: ## Efface toute la flash (après changement de table de partitions)
-	espflash erase-flash $(PORT_FLAG)
+	$(SERIAL_SH) 'espflash erase-flash $(PORT_FLAG)'
 
 example: ## Lance un exemple d'une lib : make example CRATE=rgb-led EX=ws2812
 	@test -n "$(EX)" || { echo "EX=<nom de l'exemple> requis (ex. make example CRATE=rgb-led EX=ws2812)"; exit 1; }
-	cargo run -p $(CRATE) --example $(EX) $(CARGO_FLAGS) -- $(PORT_FLAG)
+	$(SERIAL_SH) '$(TIMEOUT)cargo run -p $(CRATE) --example $(EX) $(CARGO_FLAGS) -- $(PORT_FLAG) $(NONINT)$(TIMEOUT_OK)'
 
 image: build ## Image flashable autonome (bootloader + partitions + app) dans dist/
 	mkdir -p $(DIST)
-	espflash save-image --chip $(CHIP) --merge $(ELF) $(DIST)/$(CRATE)-$(PROFILE).bin
+	espflash save-image --chip $(CHIP) --merge --skip-padding $(ELF) $(DIST)/$(CRATE)-$(PROFILE).bin
 	@ls -l $(DIST)/$(CRATE)-$(PROFILE).bin
 
 size: build ## Taille de l'ELF produit

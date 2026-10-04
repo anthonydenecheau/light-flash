@@ -57,6 +57,12 @@ Wi-Fi se fait par **Improv Wi-Fi sur BLE** (`BACKLOG.md` §2.4) ; cette branche 
   installé dans `~/.espressif` (`ESP_IDF_TOOLS_INSTALL_DIR = global`).
 - Versions figées par `Cargo.lock` : `esp-idf-svc 0.51.0`, `esp-idf-hal 0.45.2` (feature
   `rmt-legacy`), `esp-idf-sys 0.36.1`, `esp32-nimble 0.10.2`, `embuild 0.33.5`.
+- **`Cargo.lock` se régénère avec le nightly du projet** (`cargo update`), jamais avec
+  `cargo +stable` : un lock résolu par un cargo récent tire des dépendances transitives qui exigent
+  un rustc plus récent que nightly-2025-01-01. Garde-fous en place : `rust-version = "1.84"` dans
+  le workspace et `resolver.incompatible-rust-versions = "fallback"` dans `.cargo/config.toml`.
+  Exception connue : `ignore` est épinglé à 0.4.23 (0.4.30 utilise des let-chains sans déclarer
+  sa `rust-version`) ; après un `cargo update`, vérifier qu'il n'est pas remonté.
 - Un seul `sdkconfig.defaults` pour le workspace (esp-idf-sys n'est construit qu'une fois) ; il
   active NimBLE pour tous les binaires. Toute modification déclenche une recompilation complète
   d'ESP-IDF (long).
@@ -82,13 +88,21 @@ make test                                   # tests hôte des crates sans dépen
 make run     [CRATE=...] [RELEASE=1] [PORT=/dev/ttyACM0]   # flash + moniteur (cargo run)
 make flash / make monitor / make erase
 make example CRATE=rgb-led EX=ws2812        # exemple d'une lib (EX=wifi nécessite cfg.toml)
+make monitor SECS=30                        # moniteur borné et non interactif (sessions sans terminal : agents, CI)
+make example CRATE=rgb-led EX=ws2812 SECS=40   # idem pour run / example
 make image   RELEASE=1                      # dist/light-flash-release.bin flashable seul
 make clean
 ```
 
 `CRATE` vaut `light-flash` par défaut ; valeurs possibles : `light-flash`, `hardware-check`,
 `light-core`, `rgb-led`, `wifi`. Profils : debug `opt-level = "z"`, release `opt-level = "s"`.
-`clippy` et `check` nécessitent qu'ESP-IDF ait déjà été construit une fois.
+`clippy` et `check` nécessitent qu'ESP-IDF ait déjà été construit une fois. Sans `cfg.toml` à la
+racine, `build-all`, `check` et `clippy` excluent `hardware-check`.
+
+Depuis une session sans terminal (Claude Code, CI), **toujours passer `SECS=<n>`** aux cibles
+`run`, `example` et `monitor` : sans cela `espflash monitor` échoue (« Failed to initialize input
+reader ») ou ne rend jamais la main. Si l'utilisateur vient d'être ajouté au groupe `dialout` sans
+reconnexion, le Makefile passe automatiquement par `sg dialout -c`.
 
 Les seuls tests automatisés sont ceux de `light-core` (`make test`). Les binaires ont
 `harness = false` ; la validation du firmware se fait sur carte (`hardware-check`, puis `light-flash`).
@@ -105,6 +119,9 @@ encore les valeurs du modèle, et émet `rerun-if-changed` (pas de `cargo clean`
 La machine de développement est sous **Ubuntu natif** (depuis octobre 2026). La carte apparaît en
 `/dev/ttyACM0` avec le VID/PID Espressif `303a:1001` ; l'accès passe par le groupe `dialout`
 (`make setup-serial`, puis se reconnecter). `make doctor` signale un port non accessible en écriture.
+La liaison est l'USB-Serial-JTAG natif : le port se ré-énumère à chaque reset de la puce, ce
+qu'espflash gère lui-même ; ne pas garder un `cat /dev/ttyACM0` ouvert pendant un flash.
+Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puce rev v0.4, 4 Mo).
 
 ## Points d'attention
 

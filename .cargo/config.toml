@@ -8,6 +8,11 @@ runner = "espflash flash --monitor"
 # Voir https://github.com/ivmarkov/embuild/issues/16
 rustflags = ["--cfg", "espidf_time64"]
 
+# Résolution tenant compte de la MSRV (rust-version du workspace) : évite les versions de
+# dépendances qui exigent un rustc plus récent que le nightly épinglé.
+[resolver]
+incompatible-rust-versions = "fallback"
+
 [unstable]
 build-std = ["std", "panic_abort"]
 
