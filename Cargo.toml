@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+    "firmware/light-flash",
+    "firmware/hardware-check",
+    "crates/light-core",
+    "crates/rgb-led",
+    "crates/wifi",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+# Une seule version de chaque dépendance pour tout le workspace.
+# Les versions exactes sont figées par Cargo.lock, qui est commité.
+[workspace.dependencies]
+anyhow       = "1.0"
+log          = "0.4"
+rgb          = "0.8"
+esp-idf-svc  = "0.51"
+esp-idf-hal  = { version = "0.45", features = ["rmt-legacy"] }
+esp32-nimble = "0.10"
+embuild      = "0.33"
+toml-cfg     = "0.1"
+
+light-core = { path = "crates/light-core" }
+rgb-led    = { path = "crates/rgb-led" }
+wifi       = { path = "crates/wifi" }
+
+# Les profils ne sont pris en compte qu'à la racine du workspace.
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug     = true # les symboles n'augmentent pas la taille en flash
+opt-level = "z"

@@ -32,13 +32,19 @@ non mergée qui explore un portail Wi-Fi de provisioning. Il n'y a pas encore de
 
 ## 2. Architecture et organisation des répertoires
 
-### 2.1 Passer à un workspace Cargo unique (P0)
+### 2.1 Passer à un workspace Cargo unique (P0) — fait le 2026-10-04
 
-Aujourd'hui chaque crate a son `target/`, son `.cargo/config.toml`, son `rust-toolchain.toml` et
-compile **sa propre copie d'ESP-IDF** (`esp-idf-sys`) : quatre builds ESP-IDF complets, des
-versions d'`esp-idf-svc` divergentes (0.50.1 vs 0.51), et aucune garantie de cohérence.
+Réalisé : workspace racine (`Cargo.toml`, `.cargo/config.toml`, `rust-toolchain.toml`,
+`sdkconfig.defaults` uniques), crates déplacées dans `firmware/` et `crates/`, versions alignées
+(`esp-idf-svc 0.51.0`, `esp-idf-hal 0.45.2`, `esp-idf-sys 0.36.1`, `esp32-nimble 0.10.2`),
+`Cargo.lock` commité, Makefile adapté (`-p CRATE`, `build-all`, `test` sur l'hôte).
 
-Cible proposée :
+- [ ] **P0 — Vérifier le build cible** (`make build-all`) dès que `make setup-system` sera passé :
+  ce sera la première compilation d'ESP-IDF sur cette machine.
+- [ ] **P2** — Les crates `ble`, `http-server`, `storage` de l'arborescence ci-dessous seront créées
+  quand leur code existera ; `partitions.csv` et `.github/` relèvent du §5.
+
+Arborescence cible :
 
 ```
 light-flash/                      # racine = workspace
@@ -64,28 +70,27 @@ light-flash/                      # racine = workspace
 └── .github/workflows/            # CI build + clippy (voir 5.6)
 ```
 
-Étapes :
-1. Créer `Cargo.toml` racine avec `[workspace] resolver = "2"` et `members`.
-2. Remonter `[profile.dev]`/`[profile.release]` à la racine (ils sont ignorés dans les membres).
-3. Déclarer `esp-idf-svc`, `esp-idf-hal`, `esp-idf-sys`, `anyhow`, `log`, `embuild` dans
-   `[workspace.dependencies]` et utiliser `workspace = true` dans chaque membre → une seule version.
-4. Supprimer les `.cargo/config.toml`, `rust-toolchain.toml` et `sdkconfig.defaults` des membres
-   (un `.cargo/config.toml` dans un sous-répertoire n'est lu que si l'on y lance `cargo`, source
-   de comportements surprenants).
-5. Garder un `build.rs` avec `embuild::espidf::sysenv::output()` dans chaque crate qui produit un
-   binaire ou un exemple.
-6. Aligner tout sur `esp-idf-svc 0.51` (déjà fait sur la branche feature pour `rgb-led` et `wifi`).
-
-Gain attendu : une seule compilation d'ESP-IDF partagée, un seul `target/`, `cargo build --workspace`
-et `cargo clippy --workspace` fonctionnels.
+Notes de mise en œuvre :
+- Les profils ne sont lus qu'à la racine ; les versions sont centralisées dans
+  `[workspace.dependencies]` (caret, figées par `Cargo.lock`).
+- Un seul `sdkconfig.defaults` pour tout le workspace : esp-idf-sys n'est construit qu'une fois,
+  donc `hardware-check` embarque aussi la configuration NimBLE.
+- `toml-cfg` lit `cfg.toml` **à la racine du workspace** (parent de `target/`), pas dans la crate.
+- Chaque crate qui produit un binaire ou un exemple garde un `build.rs` avec
+  `embuild::espidf::sysenv::output()` ; `esp-idf-hal` et `esp-idf-svc` relaient l'environnement
+  ESP-IDF via `links`, une dépendance directe à `esp-idf-sys` n'est pas nécessaire.
+- Les tests hôte utilisent `cargo +stable`, qui ignore `[unstable] build-std` : pas besoin d'un
+  workspace séparé pour `light-core`.
 
 ### 2.2 Séparer domaine et périphériques (P1)
 
-- `light-core` : `enum LightCommand { Off, On, SetColor(Rgb), SetBrightness(u8), SetEffect(Effect) }`,
-  `struct LightState`, moteur d'effets (`fn tick(&mut self, dt) -> &[Rgb]`), gamma. Zéro dépendance
-  ESP → tests `cargo test -p light-core --target x86_64-unknown-linux-gnu` (avec `build-std` dans
-  le workspace, la std hôte est recompilée une fois ; sinon placer `light-core` dans un workspace
-  séparé pour le tester avec la toolchain stable).
+- [x] `light-core` créé le 2026-10-04 (`crates/light-core`) : `LightCommand`, `LightState`,
+  `Effect` (Solid, Breathe, Rainbow), `Renderer` (horloge + rendu d'une trame), `Gamma`,
+  `hsv_to_rgb`, et `power::{estimate_ma, limit}` pour le plafond de courant. Zéro dépendance ESP ;
+  23 tests sur l'hôte via `make test`.
+- [ ] **P1 — Brancher `light-core` dans `firmware/light-flash`** : tâche « lumière » propriétaire
+  du driver, canal `mpsc`, boucle de rendu à 50 images/s, `power::limit` avant envoi au ruban,
+  persistance différée de `LightState` en NVS.
 - Modèle de concurrence : **une tâche « lumière » possède le driver WS2812** et consomme des
   `LightCommand` via `std::sync::mpsc` (ou `crossbeam-channel`). BLE, HTTP et bouton n'envoient que
   des commandes. Résout proprement le fait que `WS2812RMT` ne peut pas être partagé, et garde les
@@ -98,18 +103,15 @@ et `cargo clippy --workspace` fonctionnels.
 
 ### 2.3 Hygiène du dépôt (P1)
 
-- [ ] Committer `Cargo.lock` (retirer `**/Cargo.lock` et les `Cargo.lock` des `.gitignore` de libs).
-  Pour un firmware, la reproductibilité prime ; les versions `=x.y.z` ne suffisent pas pour les
-  dépendances transitives.
-- [ ] Supprimer `.devcontainer/test.sh` (script de CI de `std-training`, chemins inexistants ici).
-- [ ] Ajouter un `LICENSE` et une note d'attribution : `hardware-check`, `rgb-led`, `wifi` portent
-  encore les auteurs Ferrous Systems / Espressif (MIT OR Apache-2.0) ; soit garder l'attribution,
-  soit réécrire.
-- [ ] Nettoyer `README.md` (mélange de notes WSL, de commandes et de liens) et `REFERENCES.md`
-  (commande `cargo run --example ligth-flash … --features "async,embedded-svc,wifi,embassy-net"`
-  qui n'existe pas dans ce projet).
-- [ ] Ajouter `rustfmt.toml` / `clippy.toml` minimalistes et passer `cargo clippy -- -D warnings`
-  en CI.
+- [x] `Cargo.lock` commité (2026-10-04), `**/Cargo.lock` retiré du `.gitignore`.
+- [x] `.devcontainer/test.sh` supprimé (2026-10-04).
+- [ ] **Choisir une licence** (décision à prendre par le propriétaire du projet) et ajouter
+  `LICENSE`. L'attribution à `std-training` (MIT OR Apache-2.0) figure dans le README depuis le
+  2026-10-04 et les champs `authors` d'origine sont conservés.
+- [x] `README.md` et `REFERENCES.md` réécrits (2026-10-04) : organisation, démarrage via Makefile,
+  liens réellement utiles.
+- [x] `make lint` = `cargo fmt --check` + `cargo clippy -D warnings` sur tout le workspace ;
+  configuration rustfmt/clippy par défaut, pas de fichier dédié nécessaire.
 - [ ] Ne pas merger `feature/connect2Wifi` en l'état (décision §1) ; en extraire uniquement
   l'alignement sur `esp-idf-svc 0.51`, puis garder la branche comme référence pour un éventuel
   repli SoftAP. Ne pas laisser deux `main.rs` incompatibles vivre en parallèle.
@@ -189,7 +191,7 @@ Commandes RPC : `0x01` Send Wi-Fi settings, data = `[len ssid][ssid][len psk][ps
 
 ## 3. Corrections de bugs
 
-### `light-flash/src/main.rs` (master, BLE)
+### `firmware/light-flash/src/main.rs` (BLE)
 
 - [ ] **P0 — Aucun pilotage de LED.** Le firmware « applique » ne fait que notifier un compteur.
   La caractéristique est `READ | NOTIFY` : impossible d'écrire dessus, donc impossible de piloter
@@ -199,15 +201,14 @@ Commandes RPC : `0x01` Send Wi-Fi settings, data = `[len ssid][ssid][len psk][ps
 - [ ] **P1 — `unwrap()` dans le callback `on_connect`** (`update_conn_params(...).unwrap()`) :
   un échec de négociation fait paniquer la tâche NimBLE → reboot. Logger l'erreur et continuer.
 - [ ] **P2 — `main()` retourne `()`** : passer à `anyhow::Result<()>` comme les autres crates.
-- [ ] **P2 — Dépendances inutiles** : `heapless` non utilisé ; `esp-idf-sys` déclaré en direct avec
-  `default-features = false` (sans effet : les features par défaut sont réactivées par
-  `esp-idf-svc`). Accéder à `sys` via `esp_idf_svc::sys` et supprimer la ligne. Section
-  `[features]` vide à retirer.
+- [x] **Dépendances inutiles** (fait le 2026-10-04) : `heapless` et la dépendance directe à
+  `esp-idf-sys` retirées, `link_patches` appelé via `esp_idf_svc::sys`, section `[features]` vide
+  supprimée.
 - [ ] **P2 — Sécurité BLE** : aucune authentification ; n'importe qui à portée peut se connecter.
   Au minimum un appairage « Just Works » avec bonding (`ble_device.security().set_auth(...)`) et
   `CONFIG_BT_NIMBLE_NVS_PERSIST=y` pour mémoriser les appairages.
 
-### `common/lib/wifi/src/lib.rs`
+### `crates/wifi/src/lib.rs`
 
 - [ ] **P1 — `expect()` sur la conversion SSID / mot de passe** : un SSID > 32 caractères ou un mot
   de passe > 64 caractères fait paniquer au lieu de retourner une erreur. Remplacer par
@@ -220,7 +221,7 @@ Commandes RPC : `0x01` Send Wi-Fi settings, data = `[len ssid][ssid][len psk][ps
 - [ ] **P3 — Méthode d'auth devinée** (`WPA2Personal` si mot de passe non vide) : WPA3-only non géré.
   Utiliser `AuthMethod::WPA2WPA3Personal` ou la valeur renvoyée par le scan.
 
-### `common/lib/rgb-led/src/lib.rs`
+### `crates/rgb-led/src/lib.rs`
 
 - [ ] **P0 — Un seul pixel.** Le ruban cible compte 144 LED (§6), soit 3456 paires d'impulsions
   par trame : ajouter `set_pixels(&[RGB8])` avec `VariableLengthSignal` (le driver RMT envoie les
@@ -235,13 +236,13 @@ Commandes RPC : `0x01` Send Wi-Fi settings, data = `[len ssid][ssid][len psk][ps
 - [ ] **P3 — Feature `rmt-legacy`** : l'API RMT legacy est dépréciée dans ESP-IDF 5.x ; prévoir la
   migration vers le nouveau driver RMT quand `esp-idf-hal` l'exposera pleinement.
 
-### `hardware-check/`
+### `firmware/hardware-check/`
 
-- [ ] **P1 — Build qui échoue sur un clone frais** : `build.rs` panique si `hardware-check/cfg.toml`
-  n'existe pas, mais le modèle `cfg.toml.example` est dans `common/lib/wifi/`. Mettre un
-  `cfg.toml.example` à la racine du workspace et documenter l'emplacement attendu.
-- [ ] **P2 — Modification de `cfg.toml` non détectée** : ajouter
-  `println!("cargo:rerun-if-changed=cfg.toml")` dans `build.rs` pour éviter le `cargo clean`.
+- [x] **Build qui échoue sur un clone frais** (fait le 2026-10-04) : `cfg.toml.example` est à la
+  racine du workspace, là où `toml-cfg` lit `cfg.toml` ; `build.rs` vérifie ce chemin avec un
+  message explicite.
+- [x] **Modification de `cfg.toml` non détectée** (fait le 2026-10-04) : `build.rs` émet
+  `cargo:rerun-if-changed` sur `cfg.toml`, plus besoin de `cargo clean`.
 
 ### Branche `feature/connect2Wifi`
 
@@ -272,7 +273,7 @@ branche peut être archivée telle quelle.
 
 ### 4.1 Temps de compilation
 
-- [ ] **P0 — Workspace** (§2.1) : passe de 4 compilations ESP-IDF à 1.
+- [x] **Workspace** (§2.1, fait le 2026-10-04) : passe de 4 compilations ESP-IDF à 1.
 - [ ] **P1 — Limiter les modifications de `sdkconfig.defaults`** : chaque changement reconstruit
   ESP-IDF. Regrouper les changements et les faire tôt.
 - [ ] **P2 — CI** : mettre en cache `~/.espressif` et `target/` (voir 5.6).
@@ -323,10 +324,13 @@ moniteur passe par le `Makefile`** à la racine (`make help`). Ne pas documenter
   `rust-toolchain.toml`), `ldproxy`, `espflash`, `cargo-espflash`, groupe `dialout` et règle udev
   sur le VID/PID `303a:1001`. `espup` n'est **pas** nécessaire (RISC-V uniquement).
   `make doctor` vérifie l'installation et détecte la carte.
-- [ ] **P0 — Exécuter `make setup` puis `make build`** sur cette machine et corriger ce qui bloque
-  (première compilation d'ESP-IDF : plusieurs minutes, ~2 Go dans `~/.espressif`).
-- [ ] **P2 — Workspace** : quand §2.1 sera fait, simplifier le Makefile (plus de `cd` par crate,
-  `--workspace` partout, `make test` branché sur les crates hôte).
+- [ ] **P0 — Terminer `make setup`** : au 2026-10-04 le nightly épinglé (avec rustfmt et clippy),
+  la toolchain stable et `ldproxy` sont installés. Restent `make setup-system` (cmake, ninja,
+  clang, libudev) et `make setup-serial`, qui demandent `sudo`, puis `make setup-rust` pour
+  `espflash` / `cargo-espflash` (ils ont besoin de libudev), et enfin `make build-all` (première
+  compilation d'ESP-IDF : plusieurs minutes, ~2 Go dans `~/.espressif`).
+- [x] Makefile adapté au workspace (2026-10-04) : `-p CRATE`, `build-all`, `make test` sur les
+  crates hôte, PATH de `~/.cargo/bin` exporté pour les shells non interactifs.
 - [ ] **P2 — README** : la machine de développement est désormais sous **Ubuntu natif** (plus de
   Windows/WSL2). Retirer les instructions `usbipd` et `chmod 777` du README, ou les reléguer dans
   une annexe « historique WSL2 ». Sous Ubuntu la carte apparaît directement en `/dev/ttyACM0` ;

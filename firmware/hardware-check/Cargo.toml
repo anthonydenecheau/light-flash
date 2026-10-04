@@ -1,0 +1,24 @@
+[package]
+name = "hardware-check"
+version.workspace = true
+edition.workspace = true
+authors = [
+    "Anatol Ulrich <anatol.ulrich@ferrous-systems.com>",
+    "Sergio Gasquez <sergio.gasquez@gmail.com>",
+]
+
+[[bin]]
+name = "hardware-check"
+harness = false # pas de harness libtest en cross-compilation
+
+[dependencies]
+anyhow.workspace = true
+esp-idf-svc.workspace = true
+log.workspace = true
+rgb-led.workspace = true
+toml-cfg.workspace = true
+wifi.workspace = true
+
+[build-dependencies]
+embuild.workspace = true
+toml-cfg.workspace = true

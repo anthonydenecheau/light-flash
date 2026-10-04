@@ -1,0 +1,15 @@
+[package]
+name = "rgb-led"
+version.workspace = true
+edition.workspace = true
+authors = ["Sergio Gasquez <sergio.gasquez@gmail.com>"]
+
+[dependencies]
+anyhow.workspace = true
+esp-idf-svc.workspace = true
+esp-idf-hal.workspace = true
+log.workspace = true
+rgb.workspace = true
+
+[build-dependencies]
+embuild.workspace = true

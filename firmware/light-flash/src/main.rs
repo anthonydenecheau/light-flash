@@ -1,9 +1,8 @@
 use esp32_nimble::{uuid128, BLEAdvertisementData, BLEDevice, NimbleProperties};
 use esp_idf_hal::delay::FreeRtos;
-use esp_idf_sys as _;
 
 fn main() {
-    esp_idf_sys::link_patches();
+    esp_idf_svc::sys::link_patches();
 
     // Take ownership of device
     let ble_device = BLEDevice::take();

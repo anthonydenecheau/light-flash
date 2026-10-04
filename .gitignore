@@ -1,6 +1,6 @@
 .vscode
+.claude/settings.local.json*
 **/target
-**/Cargo.lock
 cfg.toml
 __pycache__
 .DS_Store

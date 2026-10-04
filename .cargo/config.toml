@@ -1,0 +1,21 @@
+[build]
+target = "riscv32imc-esp-espidf"
+
+[target.riscv32imc-esp-espidf]
+linker = "ldproxy"
+runner = "espflash flash --monitor"
+# Nécessaire pour le build natif d'esp-idf-sys avec l'ESP32-C3.
+# Voir https://github.com/ivmarkov/embuild/issues/16
+rustflags = ["--cfg", "espidf_time64"]
+
+[unstable]
+build-std = ["std", "panic_abort"]
+
+[env]
+MCU = "esp32c3"
+# Version d'ESP-IDF construite nativement par esp-idf-sys.
+ESP_IDF_VERSION = { value = "tag:v5.3.2" }
+# Configuration ESP-IDF commune à tout le workspace (un seul build d'esp-idf-sys).
+ESP_IDF_SDKCONFIG_DEFAULTS = { value = "./sdkconfig.defaults", relative = true }
+# ESP-IDF et ses outils sont installés dans ~/.espressif, partagés entre projets.
+ESP_IDF_TOOLS_INSTALL_DIR = { value = "global" }

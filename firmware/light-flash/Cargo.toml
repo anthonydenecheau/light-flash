@@ -1,0 +1,18 @@
+[package]
+name = "light-flash"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "light-flash"
+harness = false # pas de harness libtest en cross-compilation
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+esp-idf-svc.workspace = true
+esp-idf-hal.workspace = true
+esp32-nimble.workspace = true
+
+[build-dependencies]
+embuild.workspace = true
