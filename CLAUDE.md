@@ -31,13 +31,13 @@ d'ESP-IDF, versions communes dans `[workspace.dependencies]`, `Cargo.lock` commi
 
 | Chemin | Type | Rôle |
 |---|---|---|
-| `firmware/light-flash/` | binaire | Firmware principal : tâche lumière (`light_task.rs`, 50 images/s, seule à parler au driver), thread de persistance (`persistence.rs`, NVS après 2 s de calme), Wi-Fi station si identifiants (NVS puis `cfg.toml`) sinon point d'accès de secours `light-flash`, serveur HTTP de pilotage. Démarre dans le dernier état enregistré, sinon allumée en blanc chaud. |
+| `firmware/light-flash/` | binaire | Firmware principal : tâche lumière (`light_task.rs`, 50 images/s, seule à parler au driver), thread de persistance (`persistence.rs`, NVS après 2 s de calme), thread réseau (`network.rs` : possède le driver Wi-Fi, reconnexion avec backoff, repli point d'accès `light-flash` après 90 s, nouvel essai station toutes les 2 min), serveur HTTP de pilotage démarré avant le réseau. Démarre dans le dernier état enregistré, sinon allumée en blanc chaud. |
 | `firmware/hardware-check/` | binaire | Test de la carte : Wi-Fi STA + clignotement LED bleu/vert (rouge si échec Wi-Fi). |
-| `crates/light-core/` | lib | Domaine **sans dépendance ESP** : `LightState` (+ `to_bytes`/`from_bytes` versionnés, `Display`), `LightCommand`, `Effect`, `Renderer`, `Gamma`, `power::limit` (plafond de courant), `api::{LightView, LightPatch}` (JSON), `persist::SaveScheduler` (écriture différée), `SharedState`. Testé sur l'hôte. |
+| `crates/light-core/` | lib | Domaine **sans dépendance ESP** : `LightState` (+ `to_bytes`/`from_bytes` versionnés, `Display`), `LightCommand`, `Effect`, `Renderer`, `Gamma`, `power::limit` (plafond de courant), `api::{LightView, LightPatch}` (JSON), `persist::SaveScheduler` (écriture différée), `reconnect::Policy` (machine à états de reconnexion Wi-Fi), `SharedState`. Testé sur l'hôte. |
 | `crates/rgb-led/` | lib | Driver WS2812 via RMT (API `rmt-legacy`), N pixels (`set_pixels`), impulsions précalculées. |
 | `crates/wifi/` | lib | Wi-Fi bloquant sur un driver réutilisable : `connect_sta` (15 s max) et `start_access_point`, plus le raccourci `wifi()` pour `hardware-check`. |
 | `crates/storage/` | lib | NVS (espace `light`) : identifiants Wi-Fi et dernier état de la lampe (`light_state`, 7 octets versionnés) ; `SharedStorage` + `storage::lock`. |
-| `crates/http-server/` | lib | `GET /` page de pilotage (HTML embarqué, français), `GET/POST /api/light` (JSON `LightView` / `LightPatch`), `POST /connect` (identifiants Wi-Fi, callback fourni par le firmware). |
+| `crates/http-server/` | lib | `GET /` page de pilotage (HTML embarqué, français), `GET/POST /api/light` (JSON `LightView` / `LightPatch`), `POST /connect` (identifiants Wi-Fi, callback fourni par le firmware), `POST /api/debug/wifi-disconnect` en build debug seulement (`DebugHooks`). |
 
 Fichiers racine : `Cargo.toml` (membres, versions, profils), `.cargo/config.toml` (cible, `ldproxy`,
 runner `espflash`, `ESP_IDF_VERSION`), `rust-toolchain.toml`, `sdkconfig.defaults` (commun à tous
@@ -125,7 +125,9 @@ Les seuls tests automatisés sont ceux de `light-core` (`make test`). Les binair
 Modèle : `cfg.toml.example`. `cfg.toml` est ignoré par git. Pour `light-flash` les champs sont
 facultatifs (identifiants de secours quand la NVS est vide, mot de passe du point d'accès) ; son
 `build.rs` émet `rerun-if-changed` sur `cfg.toml`, donc sans ce fichier la crate se recompile à
-chaque build (quelques secondes), c'est voulu pour détecter son apparition.
+chaque build (quelques secondes), c'est voulu pour détecter son apparition. Cargo compare les
+dates de modification : après avoir restauré un `cfg.toml` avec une date ancienne (`cp -p`,
+`git checkout`), faire `touch cfg.toml`, sinon le firmware garde l'ancienne configuration.
 `firmware/hardware-check/build.rs` fait échouer le build si le fichier manque ou contient encore
 les valeurs du modèle, et émet `rerun-if-changed` (pas de `cargo clean` nécessaire).
 
@@ -153,6 +155,10 @@ Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puc
   l'état diffère de l'enregistré) ; ne jamais écrire en NVS depuis un handler HTTP ou la tâche
   lumière. Changer le format de `LightState::to_bytes` impose d'incrémenter `FORMAT_VERSION`
   (un ancien blob est alors ignoré, pas migré).
+- Réseau : seul le thread `network` touche au driver Wi-Fi. La logique de décision est dans
+  `light_core::reconnect::Policy` (testée sur l'hôte) ; `network.rs` ne fait qu'exécuter les
+  actions (`connect_sta`, `start_access_point`) et journaliser. Pour tester la reconnexion sans
+  couper la box : `curl -X POST http://<ip>/api/debug/wifi-disconnect` (build debug).
 - Tester l'API depuis le PC : la lampe en station sur le réseau domestique (adresse dans le
   journal), puis `curl http://<ip>/api/light` ; en mode point d'accès le PC devrait quitter son
   propre Wi-Fi, préférer le téléphone.

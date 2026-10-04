@@ -8,10 +8,10 @@ use esp_idf_svc::{
     log::EspLogger,
     nvs::EspDefaultNvsPartition,
     sys,
-    wifi::EspWifi,
 };
+use http_server::DebugHooks;
 use light_core::{LightState, SharedState};
-use log::{info, warn};
+use log::info;
 use rgb_led::WS2812RMT;
 use std::{
     sync::{Arc, Mutex},
@@ -22,6 +22,7 @@ use storage::{Storage, WifiCredentials};
 use wifi::AccessPoint;
 
 mod light_task;
+mod network;
 mod persistence;
 
 /// Identifiants de secours compilés depuis `cfg.toml` (section `[light-flash]`),
@@ -73,8 +74,9 @@ fn main() -> Result<()> {
     // Persistance de l'état après 2 s de calme.
     persistence::spawn(shared.clone(), storage.clone(), saved)?;
 
-    // Réseau : station si des identifiants existent (NVS, sinon cfg.toml), point d'accès sinon.
-    let mut esp_wifi = wifi::new_wifi(peripherals.modem, sysloop.clone(), Some(nvs))?;
+    // Réseau : station si des identifiants existent (NVS, sinon cfg.toml), point d'accès sinon ;
+    // le thread réseau gère la reconnexion et le repli.
+    let esp_wifi = wifi::new_wifi(peripherals.modem, sysloop.clone(), Some(nvs))?;
     let credentials = match storage::lock(&storage).wifi_credentials()? {
         Some(c) => {
             info!("identifiants Wi-Fi : NVS (« {} »)", c.ssid);
@@ -92,9 +94,15 @@ fn main() -> Result<()> {
             None
         }
     };
-    bring_up_network(&mut esp_wifi, sysloop, credentials.as_ref())?;
+    let access_point = AccessPoint {
+        ssid: AP_SSID,
+        password: CONFIG.ap_password,
+        ..Default::default()
+    };
+    let network = network::spawn(esp_wifi, sysloop, credentials, access_point)?;
 
     // Serveur HTTP : page de pilotage, API JSON, réception des identifiants Wi-Fi.
+    // Démarré avant que le réseau soit prêt : le socket d'écoute survit aux reconnexions.
     let on_wifi_credentials = {
         let storage = storage.clone();
         Box::new(move |ssid: &str, psk: &str| -> Result<()> {
@@ -104,7 +112,10 @@ fn main() -> Result<()> {
             Ok(())
         })
     };
-    let _server = http_server::start(shared, on_wifi_credentials)?;
+    let debug_hooks = cfg!(debug_assertions).then(|| DebugHooks {
+        wifi_disconnect: Box::new(move || network.request_disconnect()),
+    });
+    let _server = http_server::start(shared, on_wifi_credentials, debug_hooks)?;
 
     loop {
         thread::sleep(Duration::from_secs(60));
@@ -113,37 +124,6 @@ fn main() -> Result<()> {
             sys::esp_get_free_heap_size()
         });
     }
-}
-
-/// Station avec les identifiants fournis ; en cas d'échec ou sans identifiants, point d'accès.
-fn bring_up_network(
-    esp_wifi: &mut EspWifi<'static>,
-    sysloop: EspSystemEventLoop,
-    credentials: Option<&WifiCredentials>,
-) -> Result<()> {
-    if let Some(c) = credentials {
-        match wifi::connect_sta(esp_wifi, sysloop.clone(), &c.ssid, &c.psk) {
-            Ok(ip) => {
-                info!("page de pilotage : http://{}/", ip.ip);
-                return Ok(());
-            }
-            Err(e) => warn!(
-                "connexion à « {} » impossible ({e}) : repli sur le point d'accès",
-                c.ssid
-            ),
-        }
-    }
-    let ap = AccessPoint {
-        ssid: AP_SSID,
-        password: CONFIG.ap_password,
-        ..Default::default()
-    };
-    let ip = wifi::start_access_point(esp_wifi, sysloop, &ap)?;
-    info!(
-        "point d'accès « {AP_SSID} » : s'y connecter puis ouvrir http://{}/",
-        ip.ip
-    );
-    Ok(())
 }
 
 /// Laisse le temps à la réponse HTTP de partir, puis redémarre pour appliquer le nouveau réseau.

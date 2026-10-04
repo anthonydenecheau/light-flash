@@ -246,9 +246,12 @@ ses défauts (aucun pilotage de LED, logger non initialisé, `unwrap()` dans un 
 ### `crates/wifi/src/lib.rs`
 
 - [x] **`expect()` sur la conversion SSID / mot de passe** : remplacés par des erreurs (2026-10-04).
-- [ ] **P1 — Aucune reconnexion.** Après une coupure de l'AP, la lampe reste déconnectée jusqu'au
-  reboot. S'abonner à `WifiEvent::StaDisconnected` sur l'`EspSystemEventLoop` et relancer
-  `connect()` avec backoff.
+- [x] **Aucune reconnexion** (fait le 2026-10-04) : thread réseau dans `light-flash` piloté par
+  `light_core::reconnect::Policy` (backoff 2 s → 30 s, repli point d'accès après 90 s de
+  déconnexion, nouvel essai station toutes les 2 min, retour en station dès succès ; 6 tests
+  hôte). Les événements `StaDisconnected` sont journalisés avec leur raison. Vérifié sur carte :
+  déconnexion forcée → API joignable en moins de 6 s ; SSID inexistant → tentatives à 0,7 / 21 /
+  43 / 70 s, point d'accès à 92 s, nouvel essai station à 212 s, point d'accès relancé à 229 s.
 - [x] **`EspWifi::new(modem, sysloop, None)`** : `light-flash` passe désormais `Some(nvs)`
   (2026-10-04) ; `hardware-check` reste sans NVS via le raccourci `wifi()`.
 - [ ] **P3 — Méthode d'auth devinée** (`WPA2Personal` si mot de passe non vide) : WPA3-only non géré.
@@ -427,9 +430,9 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
 - [x] **Stockage NVS** des identifiants Wi-Fi (`crates/storage`, espace `light`, 2026-10-04).
   `cfg.toml` ne sert plus que d'identifiants de secours et de mot de passe du point d'accès.
 - [x] **Stockage NVS du dernier état de la lampe** (2026-10-04, voir §2.2).
-- [x] **Séquence de boot** (2026-10-04, partie Wi-Fi) : NVS → sinon `cfg.toml` → station avec
-  repli point d'accès après 15 s. Reste : reconnexion automatique après coupure (§3, `wifi`),
-  mode provisioning Improv (§2.4) et signalisation par LED.
+- [x] **Séquence de boot** (2026-10-04) : NVS → sinon `cfg.toml` → station, reconnexion
+  automatique et repli point d'accès gérés par le thread réseau (§3, `wifi`). Reste : mode
+  provisioning Improv (§2.4) et signalisation par LED.
 - [ ] **P2 — Reset usine** : appui long 5 s sur BOOT (GPIO9) efface la NVS et redémarre (§2.4,
   étape 6).
 

@@ -26,6 +26,13 @@ const STACK_SIZE: usize = 10 * 1024;
 /// à planifier dans un autre thread).
 pub type OnWifiCredentials = dyn Fn(&str, &str) -> Result<()> + Send + Sync + 'static;
 
+/// Points d'entrée réservés aux builds de debug (`cfg!(debug_assertions)` côté firmware).
+pub struct DebugHooks {
+    /// `POST /api/debug/wifi-disconnect` : force une déconnexion de la station pour tester la
+    /// reconnexion automatique.
+    pub wifi_disconnect: Box<dyn Fn() + Send + Sync + 'static>,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WifiForm<'a> {
@@ -36,6 +43,7 @@ struct WifiForm<'a> {
 pub fn start(
     light: SharedState,
     on_wifi_credentials: Box<OnWifiCredentials>,
+    debug: Option<DebugHooks>,
 ) -> Result<EspHttpServer<'static>> {
     let mut server = EspHttpServer::new(&Configuration {
         stack_size: STACK_SIZE,
@@ -112,6 +120,19 @@ pub fn start(
             }
         }
     })?;
+
+    if let Some(hooks) = debug {
+        server.fn_handler::<anyhow::Error, _>(
+            "/api/debug/wifi-disconnect",
+            Method::Post,
+            move |req| {
+                warn!("debug : déconnexion Wi-Fi forcée");
+                (hooks.wifi_disconnect)();
+                write_json(req, 200, br#"{"ok":true}"#)
+            },
+        )?;
+        info!("points d'entrée de debug HTTP actifs");
+    }
 
     info!("serveur HTTP démarré sur le port 80");
     Ok(server)
