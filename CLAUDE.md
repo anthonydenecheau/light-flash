@@ -98,6 +98,7 @@ make run     [CRATE=...] [RELEASE=1] [PORT=/dev/ttyACM0]   # flash + moniteur (c
 make flash / make monitor / make erase
 make example CRATE=rgb-led EX=ws2812        # exemple d'une lib (EX=wifi nécessite cfg.toml)
 make example CRATE=rgb-led EX=led_probe     # diagnostic LED : GPIO2 et GPIO8 en couleurs pleines
+make example CRATE=rgb-led EX=led_probe_original   # contre-épreuve : driver std-training d'origine sur GPIO2
 make monitor SECS=30                        # moniteur borné et non interactif (sessions sans terminal : agents, CI)
 make example CRATE=rgb-led EX=ws2812 SECS=40   # idem pour run / example
 make image   RELEASE=1                      # dist/light-flash-release.bin flashable seul

@@ -457,13 +457,16 @@ Matériel disponible au 2026-10-04 : ruban WS2812B 5 V, 1 m, 144 LED/m, IP65 ; c
 ESP32-C3-DevKit-RUST-1 ; breadboard et fils Dupont. Aucun prototype construit. Broches retenues :
 voyant GPIO2 (RMT canal 0), ruban GPIO3 (RMT canal 1), bouton BOOT GPIO9.
 
-- [ ] **P0 — LED embarquée invisible** : l'utilisateur ne voit jamais la LED s'allumer, alors que
-  le firmware envoie bien les trames (2026-10-04). Diagnostic flashé :
-  `make example CRATE=rgb-led EX=led_probe` pilote GPIO2 (DevKit-RUST-1) et GPIO8 (DevKitM-1,
-  DevKitC-02) avec rouge, vert, bleu, blanc, extinction, 2 s chacun. Lecture : rien sur aucune
-  broche = LED ou son alimentation 5 V en cause (ou carte différente) ; allumage sur GPIO8 =
-  changer la broche dans `light-flash` et `HARDWARE.md`. La luminosité par défaut est passée de
-  96 à 160 car, après gamma 2,2, 96 ne donnait que 12 % de sortie.
+- [ ] **P0 — LED embarquée invisible** (2026-10-04). Carte confirmée ESP32-C3-DevKit-RUST-1.
+  Faits : le firmware envoie les trames sans erreur RMT ; `led_probe` (GPIO2 et GPIO8, couleurs
+  pleines) n'a rien allumé ; `led_probe_original` reprend mot pour mot le driver de
+  `std-training` (celui qui fonctionne sur cette carte pour les apprenants) sur GPIO2, horloge RMT
+  40 MHz vérifiée. Si cette contre-épreuve n'allume rien non plus, le logiciel est hors de cause :
+  LED morte, ou alimentation / piste de la LED, ou niveau logique 3,3 V insuffisant pour cet
+  exemplaire si la LED est alimentée en 5 V. Conséquence limitée : la LED embarquée ne servait que
+  de voyant ; la lampe proprement dite est le ruban sur GPIO3. À faire quand le multimètre sera
+  là : vérifier la tension d'alimentation sur la LED et la continuité GPIO2 → DIN.
+  La luminosité par défaut est passée de 96 à 160 (après gamma 2,2, 96 ne donnait que 12 %).
 - [ ] **P0 — Achats** : alimentation 5 V 8 à 10 A avec jack, adaptateur jack vers bornier,
   74AHCT125N, résistance 330 Ω, condensateur 1000 µF, fil 18 AWG, multimètre
   (liste détaillée dans `HARDWARE.md` §3).
