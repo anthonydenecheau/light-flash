@@ -119,6 +119,53 @@ impl LightState {
         }
         self.power = true;
     }
+
+    /// Version du format de sérialisation (NVS, plus tard BLE).
+    pub const FORMAT_VERSION: u8 = 1;
+    pub const SERIALIZED_LEN: usize = 7;
+
+    /// Forme compacte : `[version, power, r, g, b, brightness, effect]`.
+    pub fn to_bytes(&self) -> [u8; Self::SERIALIZED_LEN] {
+        [
+            Self::FORMAT_VERSION,
+            self.power as u8,
+            self.color.r,
+            self.color.g,
+            self.color.b,
+            self.brightness,
+            self.effect.to_u8(),
+        ]
+    }
+
+    /// Inverse de [`LightState::to_bytes`]. `None` si la taille, la version ou l'effet
+    /// est inconnu : l'appelant repart alors de l'état par défaut.
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        match *bytes {
+            [Self::FORMAT_VERSION, power, r, g, b, brightness, effect] => Some(Self {
+                power: power != 0,
+                color: RGB8::new(r, g, b),
+                brightness,
+                effect: Effect::from_u8(effect)?,
+            }),
+            _ => None,
+        }
+    }
+}
+
+impl core::fmt::Display for LightState {
+    /// Pour les journaux : `allumée #ffb464 160/255 solid`.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "{} #{:02x}{:02x}{:02x} {}/255 {}",
+            if self.power { "allumée" } else { "éteinte" },
+            self.color.r,
+            self.color.g,
+            self.color.b,
+            self.brightness,
+            self.effect.name()
+        )
+    }
 }
 
 impl Default for LightState {
@@ -172,6 +219,47 @@ mod tests {
         s.apply(LightCommand::On);
         assert!(s.power);
         assert_eq!(s.brightness, LightState::DEFAULT_BRIGHTNESS);
+    }
+
+    #[test]
+    fn state_round_trips_through_bytes() {
+        let mut s = LightState::default();
+        s.apply(LightCommand::SetColor(RGB8::new(1, 2, 3)));
+        s.apply(LightCommand::SetEffect(Effect::Rainbow));
+        s.apply(LightCommand::SetBrightness(77));
+        let bytes = s.to_bytes();
+        assert_eq!(bytes, [1, 1, 1, 2, 3, 77, 2]);
+        assert_eq!(LightState::from_bytes(&bytes), Some(s));
+        s.apply(LightCommand::Off);
+        assert_eq!(LightState::from_bytes(&s.to_bytes()), Some(s));
+    }
+
+    #[test]
+    fn from_bytes_rejects_bad_input() {
+        assert_eq!(LightState::from_bytes(&[]), None);
+        assert_eq!(
+            LightState::from_bytes(&[1, 1, 0, 0, 0, 10]),
+            None,
+            "trop court"
+        );
+        assert_eq!(
+            LightState::from_bytes(&[2, 1, 0, 0, 0, 10, 0]),
+            None,
+            "version inconnue"
+        );
+        assert_eq!(
+            LightState::from_bytes(&[1, 1, 0, 0, 0, 10, 9]),
+            None,
+            "effet inconnu"
+        );
+    }
+
+    #[test]
+    fn display_is_compact() {
+        assert_eq!(
+            LightState::default().to_string(),
+            "éteinte #ffb464 160/255 solid"
+        );
     }
 
     #[test]

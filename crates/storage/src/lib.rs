@@ -1,12 +1,25 @@
-//! Persistance en NVS (flash) : identifiants Wi-Fi, et plus tard dernier état de la lampe.
+//! Persistance en NVS (flash) : identifiants Wi-Fi et dernier état de la lampe.
 
 use anyhow::{bail, Context, Result};
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
+use light_core::LightState;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Espace de noms NVS (15 caractères maximum).
 const NAMESPACE: &str = "light";
 const KEY_SSID: &str = "wifi_ssid";
 const KEY_PSK: &str = "wifi_psk";
+const KEY_STATE: &str = "light_state";
+
+/// Stockage partagé entre threads (HTTP, persistance).
+pub type SharedStorage = Arc<Mutex<Storage>>;
+
+/// Verrouille sans propager un empoisonnement : une panique ailleurs ne doit pas bloquer la NVS.
+pub fn lock(storage: &Mutex<Storage>) -> MutexGuard<'_, Storage> {
+    storage
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 pub const SSID_MAX: usize = 32;
 pub const PSK_MAX: usize = 64;
@@ -69,6 +82,25 @@ impl Storage {
     pub fn clear_wifi_credentials(&mut self) -> Result<()> {
         self.nvs.remove(KEY_SSID)?;
         self.nvs.remove(KEY_PSK)?;
+        Ok(())
+    }
+
+    /// Dernier état enregistré. `None` si absent ou illisible (ancien format) : on repart alors
+    /// de l'état par défaut.
+    pub fn light_state(&self) -> Result<Option<LightState>> {
+        let mut buf = [0u8; 32];
+        let Some(raw) = self.nvs.get_raw(KEY_STATE, &mut buf)? else {
+            return Ok(None);
+        };
+        let state = LightState::from_bytes(raw);
+        if state.is_none() {
+            log::warn!("état enregistré illisible ({} octets), ignoré", raw.len());
+        }
+        Ok(state)
+    }
+
+    pub fn set_light_state(&mut self, state: &LightState) -> Result<()> {
+        self.nvs.set_raw(KEY_STATE, &state.to_bytes())?;
         Ok(())
     }
 }

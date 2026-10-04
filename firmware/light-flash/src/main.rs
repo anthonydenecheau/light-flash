@@ -22,6 +22,7 @@ use storage::{Storage, WifiCredentials};
 use wifi::AccessPoint;
 
 mod light_task;
+mod persistence;
 
 /// Identifiants de secours compilés depuis `cfg.toml` (section `[light-flash]`),
 /// utilisés quand la NVS ne contient rien. Voir `cfg.toml.example`.
@@ -46,19 +47,35 @@ fn main() -> Result<()> {
     let peripherals = Peripherals::take()?;
     let sysloop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
-    let storage = Arc::new(Mutex::new(Storage::new(nvs.clone())?));
+    let storage: storage::SharedStorage = Arc::new(Mutex::new(Storage::new(nvs.clone())?));
 
-    // Tâche lumière : seule propriétaire du driver LED. La lampe démarre allumée.
-    let shared: SharedState = Arc::new(Mutex::new(LightState {
-        power: true,
-        ..LightState::default()
-    }));
+    // État initial : le dernier enregistré, sinon allumée en blanc chaud.
+    let saved = storage::lock(&storage).light_state()?;
+    let initial = match saved {
+        Some(state) => {
+            info!("état restauré depuis la NVS : {state}");
+            state
+        }
+        None => {
+            let state = LightState {
+                power: true,
+                ..LightState::default()
+            };
+            info!("aucun état enregistré, état par défaut : {state}");
+            state
+        }
+    };
+    let shared: SharedState = Arc::new(Mutex::new(initial));
+
+    // Tâche lumière : seule propriétaire du driver LED.
     let led = WS2812RMT::new(peripherals.pins.gpio2, peripherals.rmt.channel0)?;
     light_task::spawn(led, shared.clone())?;
+    // Persistance de l'état après 2 s de calme.
+    persistence::spawn(shared.clone(), storage.clone(), saved)?;
 
     // Réseau : station si des identifiants existent (NVS, sinon cfg.toml), point d'accès sinon.
     let mut esp_wifi = wifi::new_wifi(peripherals.modem, sysloop.clone(), Some(nvs))?;
-    let credentials = match lock(&storage).wifi_credentials()? {
+    let credentials = match storage::lock(&storage).wifi_credentials()? {
         Some(c) => {
             info!("identifiants Wi-Fi : NVS (« {} »)", c.ssid);
             Some(c)
@@ -82,7 +99,7 @@ fn main() -> Result<()> {
         let storage = storage.clone();
         Box::new(move |ssid: &str, psk: &str| -> Result<()> {
             let creds = WifiCredentials::new(ssid, psk)?;
-            lock(&storage).set_wifi_credentials(&creds)?;
+            storage::lock(&storage).set_wifi_credentials(&creds)?;
             schedule_restart();
             Ok(())
         })
@@ -96,12 +113,6 @@ fn main() -> Result<()> {
             sys::esp_get_free_heap_size()
         });
     }
-}
-
-fn lock(storage: &Mutex<Storage>) -> std::sync::MutexGuard<'_, Storage> {
-    storage
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Station avec les identifiants fournis ; en cas d'échec ou sans identifiants, point d'accès.

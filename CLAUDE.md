@@ -31,12 +31,12 @@ d'ESP-IDF, versions communes dans `[workspace.dependencies]`, `Cargo.lock` commi
 
 | Chemin | Type | Rôle |
 |---|---|---|
-| `firmware/light-flash/` | binaire | Firmware principal : tâche lumière (`light_task.rs`, 50 images/s, seule à parler au driver), Wi-Fi station si identifiants (NVS puis `cfg.toml`) sinon point d'accès de secours `light-flash`, serveur HTTP de pilotage. Démarre allumée. |
+| `firmware/light-flash/` | binaire | Firmware principal : tâche lumière (`light_task.rs`, 50 images/s, seule à parler au driver), thread de persistance (`persistence.rs`, NVS après 2 s de calme), Wi-Fi station si identifiants (NVS puis `cfg.toml`) sinon point d'accès de secours `light-flash`, serveur HTTP de pilotage. Démarre dans le dernier état enregistré, sinon allumée en blanc chaud. |
 | `firmware/hardware-check/` | binaire | Test de la carte : Wi-Fi STA + clignotement LED bleu/vert (rouge si échec Wi-Fi). |
-| `crates/light-core/` | lib | Domaine **sans dépendance ESP** : `LightState`, `LightCommand`, `Effect`, `Renderer`, `Gamma`, `power::limit` (plafond de courant), `api::{LightView, LightPatch}` (JSON), `SharedState`. Testé sur l'hôte. |
+| `crates/light-core/` | lib | Domaine **sans dépendance ESP** : `LightState` (+ `to_bytes`/`from_bytes` versionnés, `Display`), `LightCommand`, `Effect`, `Renderer`, `Gamma`, `power::limit` (plafond de courant), `api::{LightView, LightPatch}` (JSON), `persist::SaveScheduler` (écriture différée), `SharedState`. Testé sur l'hôte. |
 | `crates/rgb-led/` | lib | Driver WS2812 via RMT (API `rmt-legacy`), N pixels (`set_pixels`), impulsions précalculées. |
 | `crates/wifi/` | lib | Wi-Fi bloquant sur un driver réutilisable : `connect_sta` (15 s max) et `start_access_point`, plus le raccourci `wifi()` pour `hardware-check`. |
-| `crates/storage/` | lib | NVS (espace `light`) : identifiants Wi-Fi. |
+| `crates/storage/` | lib | NVS (espace `light`) : identifiants Wi-Fi et dernier état de la lampe (`light_state`, 7 octets versionnés) ; `SharedStorage` + `storage::lock`. |
 | `crates/http-server/` | lib | `GET /` page de pilotage (HTML embarqué, français), `GET/POST /api/light` (JSON `LightView` / `LightPatch`), `POST /connect` (identifiants Wi-Fi, callback fourni par le firmware). |
 
 Fichiers racine : `Cargo.toml` (membres, versions, profils), `.cargo/config.toml` (cible, `ldproxy`,
@@ -147,8 +147,12 @@ Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puc
   toucher au driver LED, ne jamais journaliser un mot de passe.
 - `POST /connect` enregistre en NVS puis redémarre 2 s plus tard ; au boot suivant la lampe tente
   la station et retombe sur le point d'accès si la connexion échoue (15 s). La NVS survit aux
-  flashs : `make erase` pour repartir sans identifiants. Le journal indique la source
-  (« identifiants Wi-Fi : NVS » ou « cfg.toml »).
+  flashs : `make erase` pour repartir sans identifiants ni état. Le journal indique la source
+  (« identifiants Wi-Fi : NVS » ou « cfg.toml ») et l'état restauré.
+- Persistance de l'état : toute écriture NVS passe par `SaveScheduler` (2 s de calme, seulement si
+  l'état diffère de l'enregistré) ; ne jamais écrire en NVS depuis un handler HTTP ou la tâche
+  lumière. Changer le format de `LightState::to_bytes` impose d'incrémenter `FORMAT_VERSION`
+  (un ancien blob est alors ignoré, pas migré).
 - Tester l'API depuis le PC : la lampe en station sur le réseau domestique (adresse dans le
   journal), puis `curl http://<ip>/api/light` ; en mode point d'accès le PC devrait quitter son
   propre Wi-Fi, préférer le téléphone.

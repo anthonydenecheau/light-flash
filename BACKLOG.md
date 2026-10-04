@@ -15,8 +15,9 @@ non mergée qui explore un portail Wi-Fi de provisioning. Il n'y a pas encore de
 - [ ] **P0 — Spécifier fonctionnellement l'applique.** Rien dans le code ne dit ce que la lampe doit
   faire. Fixé le 2026-10-04 : ruban WS2812B 144 LED comme source lumineuse (§6), LED embarquée
   conservée comme voyant d'état, provisioning Improv (§2.4). Reste à fixer : commandes (on/off,
-  couleur, luminosité, effets), canal de pilotage (BLE, Wi-Fi, bouton BOOT GPIO9), comportement au
-  démarrage (restaurer le dernier état ?), luminosité maximale autorisée (§6.1).
+  couleur, luminosité, effets), canal de pilotage (BLE, Wi-Fi, bouton BOOT GPIO9), luminosité
+  maximale autorisée (§6.1). Décidé le 2026-10-04 : au démarrage la lampe restaure son dernier
+  état (voir §2.2 pour l'option « toujours allumer »).
 - [x] **Décidé le 2026-10-04 — Provisioning Wi-Fi par Improv Wi-Fi sur BLE** (détail en §2.4).
   `master` faisait du BLE, `feature/connect2Wifi` de l'AP Wi-Fi + HTTP ; faire tourner les deux
   radios en permanence sur un ESP32-C3 (≈400 Ko de SRAM) est possible mais serré. Le choix
@@ -98,8 +99,13 @@ Notes de mise en œuvre :
   les LED seulement quand la trame change. Modèle retenu : `SharedState = Arc<Mutex<LightState>>`
   plutôt qu'un canal `mpsc`, car les producteurs ont aussi besoin de lire l'état (réponse JSON) ;
   le verrou n'est jamais tenu pendant l'accès au driver, les callbacks restent courts.
-- [ ] **P1 — Persistance différée de `LightState` en NVS** (2 s après la dernière commande) et
-  restauration au démarrage ; aujourd'hui la lampe démarre allumée en blanc chaud.
+- [x] **Persistance différée de `LightState` en NVS** (2026-10-04) : `SaveScheduler` dans
+  `light-core` (2 s de calme, écriture seulement si différent, retentative après échec, 6 tests),
+  blob versionné de 7 octets, thread `persistence` dans `light-flash`, restauration au démarrage.
+  Vérifié sur carte : état restauré après reset, une rafale de 20 commandes = 1 écriture.
+- [ ] **P3 — Comportement après coupure secteur** : aujourd'hui la lampe revient dans son dernier
+  état, donc éteinte si elle l'était. Si l'applique est commandée par un interrupteur mural,
+  prévoir une option « toujours allumer à la mise sous tension » (réglable depuis la page).
 - [ ] **P2 — `LED_COUNT` et `MAX_MILLIAMPS`** (1 LED, 500 mA) à passer à 144 et au budget de
   l'alimentation quand le ruban sera câblé (§6).
 - Service GATT « light » proposé (UUID 128 bits custom) : `power` (u8, R/W/N), `color` (3 octets
@@ -342,8 +348,8 @@ intégration dans `master` sous `crates/http-server` et `crates/wifi`. La branch
   logicielle (`CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y`, vérifier le nom exact dans `menuconfig` pour
   la v5.3.2) et surveiller le heap libre (`esp_idf_svc::sys::esp_get_free_heap_size()`) dans un log
   périodique en debug.
-- [ ] **P2 — Usure de la flash** : ne pas écrire l'état en NVS à chaque commande BLE ; différer
-  l'écriture (ex. 2 s après la dernière modification).
+- [x] **Usure de la flash** : écriture différée de 2 s et seulement si l'état change
+  (`SaveScheduler`, 2026-10-04).
 - [ ] **P2 — Rendu couleur** : appliquer une correction gamma (table 256 entrées) avant envoi aux
   WS2812 pour une luminosité perçue linéaire.
 - [ ] **P3 — Économie d'énergie** : `wifi.set_ps(...)` (modem sleep) si la latence BLE/HTTP reste
@@ -420,7 +426,7 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
 
 - [x] **Stockage NVS** des identifiants Wi-Fi (`crates/storage`, espace `light`, 2026-10-04).
   `cfg.toml` ne sert plus que d'identifiants de secours et de mot de passe du point d'accès.
-- [ ] **P1 — Stockage NVS du dernier état de la lampe** (voir §2.2).
+- [x] **Stockage NVS du dernier état de la lampe** (2026-10-04, voir §2.2).
 - [x] **Séquence de boot** (2026-10-04, partie Wi-Fi) : NVS → sinon `cfg.toml` → station avec
   repli point d'accès après 15 s. Reste : reconnexion automatique après coupure (§3, `wifi`),
   mode provisioning Improv (§2.4) et signalisation par LED.
