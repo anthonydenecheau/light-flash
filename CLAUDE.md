@@ -97,6 +97,7 @@ make test                                   # tests hôte des crates sans dépen
 make run     [CRATE=...] [RELEASE=1] [PORT=/dev/ttyACM0]   # flash + moniteur (cargo run)
 make flash / make monitor / make erase
 make example CRATE=rgb-led EX=ws2812        # exemple d'une lib (EX=wifi nécessite cfg.toml)
+make example CRATE=rgb-led EX=led_probe     # diagnostic LED : GPIO2 et GPIO8 en couleurs pleines
 make monitor SECS=30                        # moniteur borné et non interactif (sessions sans terminal : agents, CI)
 make example CRATE=rgb-led EX=ws2812 SECS=40   # idem pour run / example
 make image   RELEASE=1                      # dist/light-flash-release.bin flashable seul
@@ -121,7 +122,9 @@ Les seuls tests automatisés sont ceux de `light-core` (`make test`). Les binair
 `toml-cfg` lit `cfg.toml` **à la racine du workspace** (le parent de `target/`), dans la
 **section portant le nom du package** : `[light-flash]`, `[hardware-check]`, `[wifi]` (exemple).
 Modèle : `cfg.toml.example`. `cfg.toml` est ignoré par git. Pour `light-flash` les champs sont
-facultatifs (identifiants de secours quand la NVS est vide, mot de passe du point d'accès) ;
+facultatifs (identifiants de secours quand la NVS est vide, mot de passe du point d'accès) ; son
+`build.rs` émet `rerun-if-changed` sur `cfg.toml`, donc sans ce fichier la crate se recompile à
+chaque build (quelques secondes), c'est voulu pour détecter son apparition.
 `firmware/hardware-check/build.rs` fait échouer le build si le fichier manque ou contient encore
 les valeurs du modèle, et émet `rerun-if-changed` (pas de `cargo clean` nécessaire).
 
@@ -142,4 +145,11 @@ Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puc
 - Les handlers HTTP tournent dans la tâche httpd (pile 10 Ko) : y faire court, ne jamais y
   toucher au driver LED, ne jamais journaliser un mot de passe.
 - `POST /connect` enregistre en NVS puis redémarre 2 s plus tard ; au boot suivant la lampe tente
-  la station et retombe sur le point d'accès si la connexion échoue (15 s).
+  la station et retombe sur le point d'accès si la connexion échoue (15 s). La NVS survit aux
+  flashs : `make erase` pour repartir sans identifiants. Le journal indique la source
+  (« identifiants Wi-Fi : NVS » ou « cfg.toml »).
+- Tester l'API depuis le PC : la lampe en station sur le réseau domestique (adresse dans le
+  journal), puis `curl http://<ip>/api/light` ; en mode point d'accès le PC devrait quitter son
+  propre Wi-Fi, préférer le téléphone.
+- La LED embarquée n'a jamais été vue allumée par l'utilisateur (2026-10-04) alors que les trames
+  partent : voir `BACKLOG.md` §6 et l'exemple `led_probe`.

@@ -294,6 +294,11 @@ intégration dans `master` sous `crates/http-server` et `crates/wifi`. La branch
   pour la station (`connect_sta`), ce qui permet le repli sans recréer le modem.
 - [x] **`scan()` systématique avant `connect()`** dans `wifi` : supprimé (2 à 3 s de boot
   gagnées) ; `expect()` sur les conversions SSID/mot de passe remplacés par des erreurs.
+- [x] **Vérification sur carte et depuis le PC** (2026-10-04, lampe en station sur le réseau
+  domestique) : `GET /` 200 en 5 Ko, `GET/POST /api/light` corrects, sept cas d'erreur en 400/413
+  avec message, 20 requêtes en 0,8 s, `/connect` → NVS → redémarrage → reconnexion en 12 s ;
+  après `make erase` la source d'identifiants est `cfg.toml`, puis la NVS après `/connect`
+  (vérifié en retirant `cfg.toml` le temps d'un flash).
 - [ ] **P2 — Hostname `light.local`** : `CONFIG_LWIP_LOCAL_HOSTNAME` n'affecte que le nom DHCP.
   Pour mDNS, ajouter le composant `espressif/mdns` via
   `[package.metadata.esp-idf-sys.extra_components]` et utiliser `esp_idf_svc::mdns::EspMdns`.
@@ -452,6 +457,13 @@ Matériel disponible au 2026-10-04 : ruban WS2812B 5 V, 1 m, 144 LED/m, IP65 ; c
 ESP32-C3-DevKit-RUST-1 ; breadboard et fils Dupont. Aucun prototype construit. Broches retenues :
 voyant GPIO2 (RMT canal 0), ruban GPIO3 (RMT canal 1), bouton BOOT GPIO9.
 
+- [ ] **P0 — LED embarquée invisible** : l'utilisateur ne voit jamais la LED s'allumer, alors que
+  le firmware envoie bien les trames (2026-10-04). Diagnostic flashé :
+  `make example CRATE=rgb-led EX=led_probe` pilote GPIO2 (DevKit-RUST-1) et GPIO8 (DevKitM-1,
+  DevKitC-02) avec rouge, vert, bleu, blanc, extinction, 2 s chacun. Lecture : rien sur aucune
+  broche = LED ou son alimentation 5 V en cause (ou carte différente) ; allumage sur GPIO8 =
+  changer la broche dans `light-flash` et `HARDWARE.md`. La luminosité par défaut est passée de
+  96 à 160 car, après gamma 2,2, 96 ne donnait que 12 % de sortie.
 - [ ] **P0 — Achats** : alimentation 5 V 8 à 10 A avec jack, adaptateur jack vers bornier,
   74AHCT125N, résistance 330 Ω, condensateur 1000 µF, fil 18 AWG, multimètre
   (liste détaillée dans `HARDWARE.md` §3).

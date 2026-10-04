@@ -58,12 +58,23 @@ fn main() -> Result<()> {
 
     // Réseau : station si des identifiants existent (NVS, sinon cfg.toml), point d'accès sinon.
     let mut esp_wifi = wifi::new_wifi(peripherals.modem, sysloop.clone(), Some(nvs))?;
-    let credentials = lock(&storage).wifi_credentials()?.or_else(|| {
-        (!CONFIG.wifi_ssid.is_empty()).then(|| WifiCredentials {
-            ssid: CONFIG.wifi_ssid.to_owned(),
-            psk: CONFIG.wifi_psk.to_owned(),
-        })
-    });
+    let credentials = match lock(&storage).wifi_credentials()? {
+        Some(c) => {
+            info!("identifiants Wi-Fi : NVS (« {} »)", c.ssid);
+            Some(c)
+        }
+        None if !CONFIG.wifi_ssid.is_empty() => {
+            info!("identifiants Wi-Fi : cfg.toml (« {} »)", CONFIG.wifi_ssid);
+            Some(WifiCredentials {
+                ssid: CONFIG.wifi_ssid.to_owned(),
+                psk: CONFIG.wifi_psk.to_owned(),
+            })
+        }
+        None => {
+            info!("aucun identifiant Wi-Fi : point d'accès de secours");
+            None
+        }
+    };
     bring_up_network(&mut esp_wifi, sysloop, credentials.as_ref())?;
 
     // Serveur HTTP : page de pilotage, API JSON, réception des identifiants Wi-Fi.

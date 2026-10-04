@@ -79,7 +79,7 @@ pub struct LightState {
 
 impl LightState {
     /// Luminosité rétablie quand on allume une lampe dont la luminosité est à 0.
-    pub const DEFAULT_BRIGHTNESS: u8 = 96;
+    pub const DEFAULT_BRIGHTNESS: u8 = 160;
 
     /// Applique une commande. Régler la couleur, la luminosité ou l'effet allume
     /// la lampe ; une luminosité nulle l'éteint.
