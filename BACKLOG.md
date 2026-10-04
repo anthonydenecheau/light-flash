@@ -24,6 +24,16 @@ non mergée qui explore un portail Wi-Fi de provisioning. Il n'y a pas encore de
   retenu réutilise la pile NimBLE déjà présente, stocke les identifiants en NVS, puis bascule en
   Wi-Fi STA pour l'API HTTP, mDNS et l'OTA. Le portail captif de la branche feature n'est
   conservé qu'en repli éventuel pour un téléphone sans BLE.
+- [ ] **P1 — Alimentation sur batterie ?** (question du 2026-10-04). Le montage décrit dans
+  `HARDWARE.md` est sur secteur et la carte n'a ni connecteur batterie ni jauge : un indicateur
+  de charge exige d'abord un choix matériel. Si batterie : préciser type et capacité (un ruban de
+  144 LED à 30 % tire ≈ 2,6 A sous 5 V, soit 13 W), puis mesure soit par diviseur de tension sur
+  une entrée ADC (GPIO0 ou GPIO1, précision ±10 % sur le pourcentage), soit par jauge I2C
+  MAX17048 sur le bus existant (GPIO8/GPIO10, adresse 0x36, pourcentage ±2 % et vitesse de
+  décharge, donc temps restant fiable, recommandé). Côté logiciel : `GET /api/power`
+  (`source`, `percent`, `voltage`, `current_ma`, `remaining_min`), jauge et temps restant dans la
+  page, masqués sans batterie. Sans batterie : afficher la consommation estimée du ruban, déjà
+  calculée à chaque trame par `power::estimate_ma`.
 - [ ] **P1 — Confirmer le choix `std`/ESP-IDF** plutôt qu'une migration `no_std` (`esp-hal` +
   `esp-wifi` + `embassy`, ce vers quoi pointe `REFERENCES.md`). Recommandation : rester sur ESP-IDF
   tant que BLE + Wi-Fi + HTTP + NVS + OTA sont nécessaires ; la coexistence BLE/Wi-Fi et l'OTA y sont
@@ -435,6 +445,25 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
   provisioning Improv (§2.4) et signalisation par LED.
 - [ ] **P2 — Reset usine** : appui long 5 s sur BOOT (GPIO9) efface la NVS et redémarre (§2.4,
   étape 6).
+- [ ] **P1 — Accès à la page depuis le téléphone sur le réseau domestique** (question du
+  2026-10-04). Aujourd'hui l'adresse n'est visible que dans le journal série. Options, par ordre
+  de recommandation :
+  1. **mDNS + DNS-SD** : `http://light-flash.local/` et annonce `_http._tcp` (composant
+     `espressif/mdns` à ajouter via `[workspace.metadata.esp-idf-sys]`, puis
+     `esp_idf_svc::mdns::EspMdns`). Natif sur iPhone, Mac, Windows 10+, Linux ; inégal sur
+     Android selon la version et le navigateur. Rend aussi la lampe découvrable par Home Assistant.
+  2. **Nom DHCP `light-flash`** (hostname de l'interface station) : beaucoup de box, dont la
+     Livebox, résolvent alors `http://light-flash/` sur le réseau local. Gratuit, à faire avec 1.
+  3. **Réservation DHCP dans la box** : adresse fixe, favori ou raccourci sur l'écran d'accueil.
+     Solution de secours universelle, surtout pour Android ; à documenter dans le README.
+  4. **Improv (§2.4)** : à la fin du provisioning, la lampe renvoie l'URL à ouvrir, l'appli du
+     téléphone l'ouvre directement. Le portail HTTP de secours ne le permet pas (le téléphone
+     quitte le point d'accès au redémarrage).
+  5. **Page installable (PWA)** : manifeste + icône pour un raccourci « application » sur le
+     téléphone ; ne résout pas l'adresse, à combiner avec 1 à 3.
+  6. **Domotique** : Home Assistant via découverte mDNS ou MQTT, pilotage depuis son appli, y
+     compris hors de la maison. Hors de la maison sans domotique : VPN (Tailscale est déjà sur
+     le PC) ; jamais d'ouverture de port vers la lampe, elle n'a pas d'authentification.
 
 ### 5.5 Devcontainer
 
