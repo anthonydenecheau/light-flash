@@ -17,7 +17,7 @@
 - esp32-nimble : https://github.com/taks/esp32-nimble
 - Exemple de serveur BLE dont dérive `firmware/light-flash/src/main.rs` :
   https://github.com/apollolabsdev/ESP32C3
-- Improv Wi-Fi, protocole de provisioning retenu (BACKLOG.md §2.4) :
+- Improv Wi-Fi, protocole de provisioning retenu (`crates/improv`) :
   https://www.improv-wifi.com/ble/
 
 ## Ruban LED

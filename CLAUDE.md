@@ -53,7 +53,8 @@ image, rend la trame, applique `power::limit` puis `set_pixels`. Le verrou n'est
 pendant l'accès au driver. `LED_COUNT` et `MAX_MILLIAMPS` sont dans `light_task.rs` (1 LED et
 500 mA tant que le ruban n'est pas câblé).
 
-**Provisioning Wi-Fi** : Improv Wi-Fi sur BLE (`BACKLOG.md` §2.4), implémenté le 2026-10-04.
+**Provisioning Wi-Fi** : Improv Wi-Fi sur BLE (spécification https://www.improv-wifi.com/ble/,
+protocole dans `crates/improv`), implémenté le 2026-10-04.
 La lampe s'annonce en BLE sous `light-flash` avec le service Improv ; un appui court sur BOOT
 (GPIO9) autorise la réception des identifiants pendant 60 s ; la lampe se connecte, enregistre en
 NVS et renvoie `http://light-flash.local/` et `http://<ip>/`. Clients : appli Home Assistant,
@@ -222,9 +223,10 @@ Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puc
   ré-enregistre les services au redémarrage, le GATT n'est créé qu'une fois. Le scan Wi-Fi
   d'Improv passe par le thread réseau ; le point d'accès de secours tourne en mode mixte pour que
   le scan reste possible. Hooks debug : `/api/debug/ble-off` coupe le BLE tout de suite,
-  `/api/debug/improv-authorize` simule l'appui BOOT (et rallume le BLE). Tester sans téléphone : client Python `bleak` (voir
-  `BACKLOG.md` §2.4), `rfkill unblock bluetooth` sur le PC puis `rfkill block` après, et
-  `curl -X POST http://<ip>/api/debug/improv-authorize` à la place de l'appui sur BOOT.
+  `/api/debug/improv-authorize` simule l'appui BOOT (et rallume le BLE). Tester sans téléphone :
+  client Python `bleak` (script à verser dans le dépôt, `BACKLOG.md` §2.3), `rfkill unblock
+  bluetooth` sur le PC puis `rfkill block` après, et `curl -X POST
+  http://<ip>/api/debug/improv-authorize` à la place de l'appui sur BOOT.
 - Réseau : seul le thread `network` touche au driver Wi-Fi. La logique de décision est dans
   `light_core::reconnect::Policy` (testée sur l'hôte) ; `network.rs` ne fait qu'exécuter les
   actions (`connect_sta`, `start_access_point`) et journaliser. Pour tester la reconnexion sans
