@@ -50,6 +50,10 @@ endif
 
 ELF := target/$(TARGET)/$(PROFILE)/$(CRATE)
 
+# hardware-check exige cfg.toml (identifiants Wi-Fi) à la racine : sans ce fichier, son build.rs
+# fait échouer tout le workspace, on l'exclut donc des cibles globales.
+WS_EXCLUDE := $(if $(wildcard cfg.toml),,--exclude hardware-check)
+
 .PHONY: help setup setup-system setup-rust setup-serial doctor \
         build build-all release check clippy fmt fmt-check lint test clean \
         run flash monitor erase example image size
@@ -70,8 +74,9 @@ setup-system: ## Paquets Ubuntu requis par esp-idf-sys, bindgen et espflash (sud
 
 setup-rust: ## Toolchains stable (tests hôte) et nightly épinglée (cible) + ldproxy + espflash
 	rustup toolchain install stable
-	rustup toolchain install $(TOOLCHAIN) --component rust-src
-	cargo install --locked ldproxy espflash cargo-espflash
+	rustup toolchain install $(TOOLCHAIN) --profile minimal --component rust-src,rustfmt,clippy
+	# Avec la toolchain stable : espflash exige un rustc plus récent que le nightly épinglé.
+	cargo +stable install --locked ldproxy espflash cargo-espflash
 
 setup-serial: ## Accès à /dev/ttyACM0 : groupe dialout + règle udev (sudo, se reconnecter ensuite)
 	sudo usermod -aG dialout $$USER
@@ -95,17 +100,18 @@ doctor: ## Vérifie la présence des outils et de la carte
 build: ## Compile la crate (CRATE=..., RELEASE=1 pour le profil release)
 	cargo build -p $(CRATE) $(CARGO_FLAGS)
 
-build-all: ## Compile tout le workspace, exemples compris
-	cargo build --workspace --bins --examples $(CARGO_FLAGS)
+build-all: ## Compile tout le workspace, exemples compris (hardware-check seulement si cfg.toml existe)
+	@test -f cfg.toml || echo ">> cfg.toml absent : hardware-check exclu (cp cfg.toml.example cfg.toml puis renseigner)"
+	cargo build --workspace $(WS_EXCLUDE) --bins --examples $(CARGO_FLAGS)
 
 release: ## Compile en release
 	$(MAKE) build RELEASE=1 CRATE=$(CRATE)
 
 check: ## cargo check sur tout le workspace (plus rapide que build)
-	cargo check --workspace --bins --examples $(CARGO_FLAGS)
+	cargo check --workspace $(WS_EXCLUDE) --bins --examples $(CARGO_FLAGS)
 
 clippy: ## Lint de tout le workspace (warnings = erreurs)
-	cargo clippy --workspace --bins --examples $(CARGO_FLAGS) -- -D warnings
+	cargo clippy --workspace $(WS_EXCLUDE) --bins --examples $(CARGO_FLAGS) -- -D warnings
 
 fmt: ## Formate le code
 	cargo fmt --all
