@@ -102,7 +102,15 @@ démarrée ; en cas d'échec au démarrage, le chargeur revient à la version pr
 installation d'une lampe se fait par câble (`make flash`, qui écrit aussi la table de partitions à
 deux emplacements).
 
-## Attribution
+## Licence
+
+Sous double licence, au choix de l'utilisateur :
+
+- Apache License, version 2.0 (`LICENSE-APACHE`, https://www.apache.org/licenses/LICENSE-2.0) ;
+- MIT License (`LICENSE-MIT`, https://opensource.org/licenses/MIT).
+
+Toute contribution soumise volontairement au projet est réputée placée sous ces deux licences,
+sans condition supplémentaire.
 
 `hardware-check`, `rgb-led` et `wifi` dérivent de [esp-rs/std-training](https://github.com/esp-rs/std-training)
-(Ferrous Systems et Espressif, licence MIT OR Apache-2.0).
+(Ferrous Systems et Espressif, même double licence) ; leurs auteurs d'origine sont conservés.

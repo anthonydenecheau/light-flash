@@ -3,6 +3,7 @@ name = "light-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 description = "Domaine de l'applique : état, commandes, rendu, budget de puissance. Sans dépendance ESP."
 
 [dependencies]

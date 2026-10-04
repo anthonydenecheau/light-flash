@@ -11,8 +11,8 @@ page et API, persistance, reconnexion Wi-Fi avec repli, mDNS et nom DHCP, Improv
 par lampe, mode groupe, mise à jour par HTTP local, scènes, minuterie et horaires, manuel
 (chapitres 1 et 2). **Prochaines priorités, dans l'ordre :** (1) matériel du ruban (§6),
 (2) mémoire avec BLE actif (§4.3), (3) authentification de la page (§3), (4) mise à jour des
-versions (§2.3), (5) CI (§5.6), (6) devcontainer (§5.5). Deux questions en attente du
-propriétaire : batterie ou non (§1) et licence (§2.3).
+versions (§2.3), (5) CI (§5.6), (6) devcontainer (§5.5). Une question en attente du
+propriétaire : batterie ou non (§1). Licence choisie le 2026-10-04 : MIT OR Apache-2.0.
 
 **Décisions prises** (pour mémoire, détail dans `CLAUDE.md`) :
 
@@ -69,8 +69,6 @@ Fait. Notes de mise en œuvre (profils, `Cargo.lock` et nightly, `cfg.toml`, `bu
 
 ### 2.3 Hygiène du dépôt
 
-- [ ] **Choisir une licence** (propriétaire du projet) et ajouter `LICENSE`. L'attribution à
-  `std-training` (MIT OR Apache-2.0) figure dans le README, les `authors` d'origine sont conservés.
 - [ ] **P1 — Mettre à jour les versions** (analyse du 2026-10-04). L'ensemble actuel est celui
   de `esp-rs/std-training` (connu bon) ; l'ensemble « dernier » est cohérent entre lui
   (`esp32-nimble 0.13` exige `esp-idf-svc 0.53.0`). L'ESP32-C3 est supporté partout.

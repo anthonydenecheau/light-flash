@@ -3,6 +3,7 @@ name = "improv"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 description = "Protocole Improv Wi-Fi sur BLE (improv-wifi.com/ble) : paquets RPC et machine à états, sans dépendance ESP."
 
 [dependencies]

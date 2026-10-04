@@ -45,7 +45,8 @@ d'ESP-IDF, versions communes dans `[workspace.dependencies]`, `Cargo.lock` commi
 
 Fichiers racine : `Cargo.toml` (membres, versions, profils), `.cargo/config.toml` (cible, `ldproxy`,
 runner `espflash`, `ESP_IDF_VERSION`), `rust-toolchain.toml`, `sdkconfig.defaults` (commun à tous
-les binaires), `cfg.toml.example`, `Makefile`.
+les binaires), `cfg.toml.example`, `Makefile`, `LICENSE-MIT` et `LICENSE-APACHE` (double licence
+MIT OR Apache-2.0 choisie le 2026-10-04, `license` hérité du workspace par chaque crate).
 
 **Modèle de concurrence :** `SharedState = Arc<Mutex<LightState>>`. Les producteurs (handlers
 HTTP, plus tard BLE et bouton) font `lock().apply(cmd)` ; la tâche lumière copie l'état à chaque

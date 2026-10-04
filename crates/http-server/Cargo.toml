@@ -3,6 +3,7 @@ name = "http-server"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 description = "Serveur HTTP de la lampe : page de pilotage, API JSON, formulaire Wi-Fi, actions système."
 
 [dependencies]

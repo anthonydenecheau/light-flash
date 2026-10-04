@@ -18,6 +18,7 @@ edition = "2021"
 # resolver.incompatible-rust-versions = "fallback" (.cargo/config.toml), cargo choisit des
 # versions de dépendances compatibles au lieu des plus récentes.
 rust-version = "1.84"
+license = "MIT OR Apache-2.0"
 
 # Une seule version de chaque dépendance pour tout le workspace.
 # Les versions exactes sont figées par Cargo.lock, qui est commité.
