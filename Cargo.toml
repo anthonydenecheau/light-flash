@@ -12,7 +12,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 # MSRV alignée sur le nightly épinglé (rustc 1.85.0-nightly). Avec
 # resolver.incompatible-rust-versions = "fallback" (.cargo/config.toml), cargo choisit des

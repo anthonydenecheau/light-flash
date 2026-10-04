@@ -110,7 +110,9 @@ make example CRATE=rgb-led EX=led_probe     # diagnostic LED : GPIO2 et GPIO8 en
 make example CRATE=rgb-led EX=led_probe_original   # contre-épreuve : driver std-training d'origine sur GPIO2
 make monitor SECS=30                        # moniteur borné et non interactif (sessions sans terminal : agents, CI)
 make example CRATE=rgb-led EX=ws2812 SECS=40   # idem pour run / example
-make image   RELEASE=1                      # dist/light-flash-release.bin flashable seul
+make image   RELEASE=1                      # dist/light-flash-release.bin flashable seul (câble)
+make publish NOTES="..."                    # image release + manifest.json dans dist/update/ (OTA)
+make serve-update                           # sert dist/update/ sur le port 8000
 make clean
 ```
 
@@ -183,6 +185,20 @@ Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puc
   Test sans seconde carte : `scratchpad/fake_peer.py` (zeroconf + mini API, à relancer depuis le
   dépôt si besoin : annonce `_http._tcp` avec `light-flash=1` sur le PC) et un script Playwright
   qui clique dans la vraie page ; Playwright et zeroconf sont installés sur le PC.
+- **Mise à jour par le réseau (OTA)** : `partitions.csv` (deux emplacements de 1,94 Mo, pas de
+  partition `factory`), `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`, `make flash` écrit le
+  bootloader produit par esp-idf-sys et la table (changer la table impose `make erase`).
+  `make publish` produit l'image *application seule* en release et `manifest.json` (version, url,
+  sha256, size, notes) dans `dist/update/` ; `make serve-update` les sert sur le port 8000.
+  Côté lampe, `update.rs` : vérification à 25 s, toutes les 6 h et sur demande, GET HTTP/1.1
+  minimal sur `TcpStream` (pas le client ESP-IDF, qui entraîne mbedTLS : 300 Ko), écriture en
+  flux via `EspOta`, SHA-256 (`sha2`) et taille vérifiés, redémarrage ; `main` confirme l'image
+  (`mark_running_slot_valid`) dès que le réseau est opérationnel. Les tailles d'image sont le
+  point de vigilance : debug 1,98 Mo pour 2,03 Mo d'emplacement (49 Ko de marge), release
+  1,71 Mo ; `CONFIG_COMPILER_OPTIMIZATION_SIZE`, pas de bundle de certificats, pas de WPA2
+  Entreprise ni d'IPv6. Si debug ne tient plus : `make run RELEASE=1` (sans les hooks de debug)
+  ou trouver d'autres réductions avant d'ajouter du code. Vérifié le 2026-10-04 : 0.2.0 → 0.2.1
+  en 29 s, redémarrage sur `ota_1`, confirmation, « firmware à jour ».
 - Page de pilotage : un seul fichier `crates/http-server/src/static/index.html`, placeholder
   `__LOGO__` remplacé par `build.rs` (data URI de `logo-160.jpg`) puis gzippé ; `make build`
   suffit après modification. Rendu vérifié avec Chrome sans tête :

@@ -187,6 +187,24 @@ Dès qu'une autre lampe est connue, un sélecteur apparaît en haut de la carte 
 La découverte prend jusqu'à une minute après l'allumage d'une lampe. Pour des scènes, des
 programmations ou un pilotage à la voix, utilisez un groupe de lumières dans Home Assistant.
 
+### 2.6 Mettre à jour la lampe
+
+Les nouvelles versions du logiciel de la lampe se distribuent depuis un petit serveur de fichiers
+de la maison (un ordinateur ou un NAS), sans câble. Une seule fois, dans la carte *Mises à jour*,
+saisir l'adresse de ce serveur, par exemple `http://192.168.1.30:8000`, et *Enregistrer*.
+
+Ensuite, la lampe vérifie toute seule au démarrage puis toutes les six heures, et à chaque fois
+que vous appuyez sur *Vérifier maintenant*. Quand une version plus récente est publiée, un
+bandeau coloré apparaît en haut de la page : « Mise à jour x.y.z disponible », avec le
+descriptif. Appuyez sur **Mettre à jour**, confirmez : la barre de progression suit le
+téléchargement, puis la lampe vérifie l'image reçue et redémarre. Comptez une minute ; la lampe
+continue d'éclairer pendant le téléchargement et s'éteint le temps du redémarrage. La page se
+reconnecte d'elle-même et affiche la nouvelle version.
+
+Si quelque chose se passe mal pendant la mise à jour (coupure du Wi-Fi, fichier abîmé), rien
+n'est perdu : la lampe garde la version précédente et le bandeau propose de réessayer. Si une
+nouvelle version ne parvient pas à démarrer, la lampe revient d'elle-même à l'ancienne.
+
 ## 3. Résolution des problèmes
 
 À venir.

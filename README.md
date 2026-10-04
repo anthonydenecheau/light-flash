@@ -88,6 +88,20 @@ passe. Deux options saines :
 La première compilation télécharge et construit ESP-IDF (plusieurs minutes, environ 2 Go dans
 `~/.espressif`).
 
+## Mettre à jour les lampes par le réseau
+
+```bash
+make publish NOTES="Ce qui change"     # image release + manifest.json dans dist/update/
+make serve-update                      # sert dist/update/ sur http://<ce pc>:8000
+```
+
+Dans la page de chaque lampe, carte *Mises à jour*, renseigner une fois `http://<ce pc>:8000`.
+La lampe vérifie au démarrage et toutes les six heures ; un bandeau propose d'installer la
+nouvelle version, qui est téléchargée dans l'emplacement inactif, vérifiée par SHA-256, puis
+démarrée ; en cas d'échec au démarrage, le chargeur revient à la version précédente. La première
+installation d'une lampe se fait par câble (`make flash`, qui écrit aussi la table de partitions à
+deux emplacements).
+
 ## Attribution
 
 `hardware-check`, `rgb-led` et `wifi` dérivent de [esp-rs/std-training](https://github.com/esp-rs/std-training)

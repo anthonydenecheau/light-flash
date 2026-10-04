@@ -423,17 +423,17 @@ intégration dans `master` sous `crates/http-server` et `crates/wifi`. La branch
 
 ### 4.2 Taille du binaire et flash
 
-- [ ] **P1 — `CONFIG_COMPILER_OPTIMIZATION_SIZE=y`** : par défaut ESP-IDF compile son code C en
-  `-Og` ; `-Os` réduit sensiblement la partie IDF du binaire.
+- [x] **`CONFIG_COMPILER_OPTIMIZATION_SIZE=y`** (2026-10-04).
 - [x] **Rôles NimBLE** : `CONFIG_BT_NIMBLE_ROLE_CENTRAL=n`, `CONFIG_BT_NIMBLE_ROLE_OBSERVER=n`
   (2026-10-04, la lampe est périphérique seulement).
-- [ ] **P1 — Désactiver les autres composants IDF inutiles** dans `sdkconfig.defaults` :
-  `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n` tant qu'il n'y a pas de TLS sortant (≈ 60–80 Ko de
-  flash), `CONFIG_LOG_DEFAULT_LEVEL_WARN=y` en release.
+- [x] **Composants IDF inutiles désactivés** (2026-10-04) : bundle de certificats, WPA2
+  Entreprise, 802.11r, IPv6 ; `-Os` pour le code C.
+- [ ] **P2 — `CONFIG_LOG_DEFAULT_LEVEL_WARN=y` en release** (journal moins bavard, image plus
+  petite) ; demande un `sdkconfig.release` distinct ou un `sdkconfig.defaults` conditionnel.
 - [ ] **P2 — Profil release Rust** : ajouter `lto = "fat"`, `codegen-units = 1`, `strip = true`
   (n'affecte que la partie Rust ; `panic = "abort"` est déjà imposé par `build-std`).
-- [x] **Taille mesurée** (2026-10-04, `make image`) : 1,75 Mo en debug, 1,51 Mo en release avec
-  BLE + Wi-Fi + HTTP + mDNS. À consigner à chaque version (CI, §5.6).
+- [x] **Taille mesurée** (2026-10-04, `make image`) : 1,98 Mo en debug, 1,71 Mo en release
+  avec BLE, Wi-Fi, HTTP, mDNS, OTA (voir §5.3 pour la marge). À consigner à chaque version (CI).
 
 ### 4.3 Exécution
 
@@ -502,24 +502,23 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
 
 ### 5.3 Table de partitions et OTA
 
-- [ ] **P1 — `partitions.csv` avec deux slots OTA** (flash 4 Mo). Par défaut `espflash` utilise une
-  seule partition `factory` : impossible de mettre à jour sans câble. Attention : avec BLE,
-  Wi-Fi, HTTP et mDNS, l'application fait 1,75 Mo en debug (2026-10-04) ; mesurer la taille en
-  release avant de fixer la taille des slots (1,5 Mo chacun ne suffirait pas en debug).
-  ```csv
-  # Name,    Type, SubType,  Offset,   Size
-  nvs,       data, nvs,      0x9000,   0x6000
-  otadata,   data, ota,      0xf000,   0x2000
-  phy_init,  data, phy,      0x11000,  0x1000
-  ota_0,     app,  ota_0,    0x20000,  0x1C0000
-  ota_1,     app,  ota_1,    0x1E0000, 0x1C0000
-  storage,   data, spiffs,   0x3A0000, 0x60000
-  ```
-  Slots de 1,75 Mo : l'image release fait 1,51 Mo le 2026-10-04 (BLE + Wi-Fi + HTTP + mDNS), la
-  debug 1,75 Mo ; l'OTA se fera en release.
-- [ ] **P1 — Mise à jour par HTTP depuis un serveur local** (demande du 2026-10-04 : « je
-  déploie l'image, l'utilisateur est notifié dans l'application, il clique, le firmware se
-  déploie »). Faisable avec `esp_idf_svc::ota::EspOta` ; plan :
+- [x] **`partitions.csv` avec deux slots OTA** (fait le 2026-10-04) : `ota_0` et `ota_1` de
+  1,94 Mo chacun (0x1F0000), `otadata`, pas de partition `factory` ni `spiffs` ; flashée par
+  `make flash` avec le bootloader produit par esp-idf-sys (rollback actif). Tailles au
+  2026-10-04 : debug 1,98 Mo (**49 Ko de marge**), release 1,71 Mo. Réductions appliquées :
+  `-Os` pour ESP-IDF, pas de bundle de certificats, pas de WPA2 Entreprise ni de 802.11r, pas
+  d'IPv6, client HTTP minimal sur `TcpStream` au lieu de celui d'ESP-IDF (mbedTLS, ≈ 300 Ko).
+- [ ] **P1 — Marge de l'image debug** : 49 Ko seulement. Pistes : `lto = "thin"` et
+  `codegen-units = 1` sur le profil dev, `CONFIG_LOG_MAXIMUM_LEVEL_INFO`, journaux NimBLE
+  réduits, ou flasher la lampe en release (`make run RELEASE=1`) avec les hooks de debug derrière
+  une feature cargo plutôt que `debug_assertions`.
+- [x] **Mise à jour par HTTP depuis un serveur local** (fait le 2026-10-04, version 0.2.x) :
+  `make publish` + `make serve-update`, `update.rs` (vérification au démarrage, toutes les 6 h,
+  à la demande ; téléchargement en flux dans l'emplacement inactif, SHA-256 et taille vérifiés,
+  redémarrage, confirmation de l'image une fois le réseau opérationnel), API `/api/update`,
+  bandeau et réglages dans la page, chapitre 2.6 du manuel. Vérifié : 0.2.0 → 0.2.1 en 29 s
+  (1,7 Mo à ≈ 60 Ko/s avec BLE actif), redémarrage sur `ota_1`, confirmation, « firmware à
+  jour ». Plan initial conservé ci-dessous pour mémoire :
   1. **Partitions** : `partitions.csv` ci-dessus (deux slots de 1,75 Mo, `otadata`),
      `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y` ; flashé une fois par câble (`make erase` puis
      `make flash` avec `--partition-table`) ; `make image RELEASE=1` produit aussi l'image
@@ -543,8 +542,11 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
   5. **Sécurité** : réseau local seulement, HTTP sans TLS mais SHA-256 obligatoire ; plus tard,
      signature des images (§ ci-dessous) pour refuser un `.bin` étranger.
   Ordre de grandeur : 1,5 Mo à 300–500 Ko/s sur le réseau local, soit moins de 10 s.
-- [ ] **P3 — Signature des images** (`CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=y`) une fois l'OTA
-  en place.
+- [ ] **P2 — Signature des images** (`CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=y`, clé dans le
+  dépôt de publication seulement) : refuser un `.bin` qui ne vient pas de vous. Manque face à
+  l'état de l'art, à faire avec l'authentification de la page (§3).
+- [ ] **P3 — Débit de téléchargement** : ≈ 60 Ko/s avec BLE actif ; couper le BLE pendant le
+  téléchargement ou agrandir les tampons Wi-Fi pour viser 300 Ko/s.
 
 ### 5.4 Provisioning et persistance
 
