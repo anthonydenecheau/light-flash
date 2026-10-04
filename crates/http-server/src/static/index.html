@@ -50,6 +50,12 @@ input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline
 #toast.show{opacity:1;transform:translate(-50%,0)}
 footer{text-align:center;color:var(--muted);font-size:.75rem}
 body.busy section{opacity:.6;pointer-events:none}
+.upd{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+.upd h2{color:rgba(255,255,255,.8)}.upd p{margin:.3rem 0 0;font-size:.92rem;opacity:.95}
+.upd .btn{background:#fff;border-color:#fff;color:var(--accent)}
+.bar{height:7px;background:rgba(255,255,255,.3);border-radius:4px;margin:.9rem 0 .4rem;overflow:hidden}.bar i{display:block;height:100%;width:0;background:#fff;border-radius:4px;transition:width .4s}
+.upd small{display:block;opacity:.9}
+.mini{font-size:.85rem;color:var(--muted);margin:.2rem 0 .6rem}
 </style>
 </head>
 <body>
@@ -58,6 +64,14 @@ body.busy section{opacity:.6;pointer-events:none}
   <img src="__LOGO__" alt="">
   <div><h1 id="name">light-flash</h1><div class="sub"><span class="dot" id="dot"></span><span id="netline">Connexion à la lampe…</span></div></div>
 </header>
+
+<section class="upd" id="update" hidden>
+  <h2>Mise à jour</h2>
+  <strong id="upd-title">Mise à jour disponible</strong>
+  <p id="upd-notes"></p>
+  <div class="actions"><button class="btn" id="upd-install">Mettre à jour</button></div>
+  <div id="upd-progress" hidden><div class="bar"><i id="upd-bar"></i></div><small id="upd-phase"></small></div>
+</section>
 
 <section>
   <h2>Lumière</h2>
@@ -106,6 +120,15 @@ body.busy section{opacity:.6;pointer-events:none}
     <button class="btn" id="restart">Redémarrer…</button>
   </div>
   <p class="meta" id="meta"></p>
+</section>
+
+<section>
+  <h2>Mises à jour</h2>
+  <p class="mini" id="upd-info">–</p>
+  <form id="updurl">
+    <label class="f">Serveur de mises à jour<input type="text" id="upd-url" maxlength="128" placeholder="http://192.168.1.30:8000" inputmode="url" autocomplete="off"></label>
+    <div class="actions"><button class="btn primary" type="submit">Enregistrer</button><button class="btn" type="button" id="upd-check">Vérifier maintenant</button></div>
+  </form>
 </section>
 
 <footer>light-flash <span id="version"></span></footer>
@@ -177,9 +200,29 @@ function paintStatus(s) {
   $("ble").textContent = s.ble_active ? "Bluetooth actif (prolonger)" : "Rendre visible en Bluetooth";
   $("meta").textContent = `${s.hardware} · ${s.led_count} LED, ${s.max_ma} mA max · allumée depuis ${uptime(s.uptime_s)} · ${Math.round(s.heap_free / 1024)} Ko libres`;
 }
+const PHASES = { checking: "Vérification…", downloading: "Téléchargement", verifying: "Vérification de l'image…", rebooting: "Redémarrage de la lampe…", failed: "Échec" };
+let updUrlTouched = false;
+function paintUpdate(u) {
+  const busy = ["downloading", "verifying", "rebooting"].includes(u.phase);
+  const sec = $("update"); sec.hidden = !(u.available || busy || u.phase === "failed");
+  if (!sec.hidden) {
+    $("upd-title").textContent = u.available ? `Mise à jour ${u.available.version} disponible` : u.phase === "failed" ? "Mise à jour échouée" : "Mise à jour en cours";
+    $("upd-notes").textContent = u.phase === "failed" ? (u.error || "") : (u.available && u.available.notes) || "";
+    $("upd-install").hidden = busy || !u.available; $("upd-install").textContent = u.phase === "failed" ? "Réessayer" : "Mettre à jour";
+    $("upd-progress").hidden = !busy; $("upd-bar").style.width = (u.phase === "rebooting" ? 100 : u.progress) + "%";
+    $("upd-phase").textContent = (PHASES[u.phase] || "") + (u.phase === "downloading" ? ` ${u.progress} %` : "");
+  }
+  const ago = u.last_check_s == null || !status ? null : Math.max(0, Math.round((status.uptime_s - u.last_check_s) / 60));
+  $("upd-info").textContent = `Version ${u.current} (emplacement ${u.running_slot})` + (u.url ? (ago == null ? "" : ` · vérifié il y a ${ago} min`) + (u.available ? "" : u.error ? " · " + u.error : " · à jour") : " · aucun serveur configuré");
+  if (!updUrlTouched) $("upd-url").value = u.url || "";
+}
+$("upd-url").oninput = () => { updUrlTouched = true; };
+$("updurl").onsubmit = e => { e.preventDefault(); updUrlTouched = false; action("/api/update/url", { url: $("upd-url").value }); };
+$("upd-check").onclick = () => action("/api/update/check", {});
+$("upd-install").onclick = () => action("/api/update/install", {}, "Installer la mise à jour ? La lampe redémarrera à la fin.");
 async function refresh() {
   if (document.visibilityState !== "visible") return;
-  try { paintLight(await api("/api/light")); paintStatus(await api("/api/status")); paintPeers((await api("/api/peers")).peers || []); }
+  try { paintLight(await api("/api/light")); paintStatus(await api("/api/status")); paintPeers((await api("/api/peers")).peers || []); paintUpdate(await api("/api/update")); }
   catch (e) { $("netline").textContent = "Lampe injoignable"; $("dot").className = "dot"; }
 }
 async function action(path, body, confirmMsg) {

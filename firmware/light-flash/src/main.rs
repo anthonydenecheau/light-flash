@@ -14,7 +14,10 @@ use esp_idf_svc::{
     nvs::EspDefaultNvsPartition,
     sys,
 };
-use http_server::{DebugHooks, HttpContext, PeerView, StatusView, SystemHooks};
+use http_server::{
+    DebugHooks, HttpContext, PeerView, StatusView, SystemHooks, UpdateAvailable, UpdateHooks,
+    UpdateView,
+};
 use light_core::{naming, LightState, SharedIndication, SharedState};
 use log::info;
 use rgb_led::WS2812RMT;
@@ -31,6 +34,7 @@ mod light_task;
 mod network;
 mod persistence;
 mod provisioning;
+mod update;
 
 /// Identifiants de secours compilés depuis `cfg.toml` (section `[light-flash]`),
 /// utilisés quand la NVS ne contient rien. Voir `cfg.toml.example`.
@@ -42,6 +46,8 @@ pub struct Config {
     wifi_psk: &'static str,
     #[default("light-flash")]
     ap_password: &'static str,
+    #[default("")]
+    update_url: &'static str,
 }
 
 const HARDWARE: &str = "ESP32-C3-DevKit-RUST-1";
@@ -228,6 +234,46 @@ fn main() -> Result<()> {
             ble_off: Box::new(move || ble_off.store(true, Ordering::Relaxed)),
         }
     });
+    // Mise à jour par HTTP local : adresse du serveur en NVS, sinon cfg.toml.
+    let update_url = storage::lock(&storage)
+        .update_url()?
+        .unwrap_or_else(|| CONFIG.update_url.trim_end_matches('/').to_owned());
+    let update = update::spawn(storage.clone(), update_url, env!("CARGO_PKG_VERSION"), boot)?;
+    let update_hooks = UpdateHooks {
+        status: {
+            let update = update.clone();
+            Box::new(move || {
+                let s = update.state();
+                UpdateView {
+                    current: s.current.to_owned(),
+                    url: s.url,
+                    available: s.available.map(|m| UpdateAvailable {
+                        version: m.version,
+                        notes: m.notes,
+                        size: m.size,
+                    }),
+                    phase: s.phase.as_str().to_owned(),
+                    progress: s.progress,
+                    error: s.error,
+                    last_check_s: s.last_check_s,
+                    running_slot: s.running_slot,
+                }
+            })
+        },
+        check: {
+            let update = update.clone();
+            Box::new(move || update.check())
+        },
+        install: {
+            let update = update.clone();
+            Box::new(move || update.install())
+        },
+        set_url: {
+            let update = update.clone();
+            Box::new(move |url: &str| update.set_url(url))
+        },
+    };
+
     let peers_view = Box::new(move || {
         peers
             .lock()
@@ -247,15 +293,27 @@ fn main() -> Result<()> {
         status,
         peers: peers_view,
         system,
+        update: update_hooks,
         debug,
     })?;
 
+    // Après une mise à jour, l'image doit se confirmer une fois le réseau opérationnel ;
+    // sinon le bootloader reviendra à la précédente au prochain redémarrage.
+    let mut validated = false;
+    let mut ticks: u32 = 0;
     loop {
-        thread::sleep(Duration::from_secs(60));
-        // SAFETY: lecture d'un compteur ESP-IDF, sans argument ni effet de bord.
-        info!("tas libre : {} octets", unsafe {
-            sys::esp_get_free_heap_size()
-        });
+        thread::sleep(Duration::from_secs(5));
+        ticks += 1;
+        if !validated && network.status().mode != network::NetMode::Connecting {
+            update::mark_running_valid();
+            validated = true;
+        }
+        if ticks % 12 == 0 {
+            // SAFETY: lecture d'un compteur ESP-IDF, sans argument ni effet de bord.
+            info!("tas libre : {} octets", unsafe {
+                sys::esp_get_free_heap_size()
+            });
+        }
     }
 }
 

@@ -11,6 +11,8 @@ const KEY_SSID: &str = "wifi_ssid";
 const KEY_PSK: &str = "wifi_psk";
 const KEY_STATE: &str = "light_state";
 const KEY_NAME: &str = "name";
+const KEY_UPDATE_URL: &str = "update_url";
+pub const UPDATE_URL_MAX: usize = 128;
 
 /// Stockage partagé entre threads (HTTP, persistance).
 pub type SharedStorage = Arc<Mutex<Storage>>;
@@ -121,11 +123,37 @@ impl Storage {
         Ok(())
     }
 
-    /// Réinitialisation d'usine : identifiants Wi-Fi, état de la lampe et nom effacés.
+    /// Adresse de base du serveur de mises à jour ; `None` si jamais définie.
+    pub fn update_url(&self) -> Result<Option<String>> {
+        let mut buf = [0u8; UPDATE_URL_MAX + 1];
+        Ok(self
+            .nvs
+            .get_str(KEY_UPDATE_URL, &mut buf)?
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned))
+    }
+
+    /// Enregistre l'adresse (vide = retirer).
+    pub fn set_update_url(&mut self, url: &str) -> Result<()> {
+        let url = url.trim();
+        if url.is_empty() {
+            self.nvs.remove(KEY_UPDATE_URL)?;
+        } else {
+            if url.len() > UPDATE_URL_MAX {
+                bail!("adresse trop longue ({UPDATE_URL_MAX} octets maximum)");
+            }
+            self.nvs.set_str(KEY_UPDATE_URL, url)?;
+        }
+        log::info!("serveur de mises à jour : « {url} »");
+        Ok(())
+    }
+
+    /// Réinitialisation d'usine : identifiants Wi-Fi, état, nom et serveur de mises à jour effacés.
     pub fn factory_reset(&mut self) -> Result<()> {
         self.clear_wifi_credentials()?;
         self.nvs.remove(KEY_STATE)?;
         self.nvs.remove(KEY_NAME)?;
+        self.nvs.remove(KEY_UPDATE_URL)?;
         log::warn!("NVS effacée : réinitialisation d'usine");
         Ok(())
     }

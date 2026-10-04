@@ -6,12 +6,15 @@ Préconisations issues de l'analyse initiale (branche `master` au commit `b3f2b4
 texte comme trace des décisions.
 
 **État au 2026-10-04 (relecture complète).** Fait et vérifié sur carte : workspace Cargo unique,
-tâche lumière, API et page HTTP, persistance NVS, reconnexion Wi-Fi avec repli point d'accès,
-mDNS et nom DHCP, provisioning Improv sur BLE, manuel utilisateur (chapitre 1). Prochaines
-priorités, dans l'ordre : (1) matériel du ruban (§6, achats puis mise en route), (2) mémoire avec
-BLE actif (§4.3), (3) mise à jour des versions (§2.3), (4) partitions OTA et CI (§5.3, §5.6),
-(5) devcontainer (§5.5). Deux questions en attente du propriétaire : batterie ou non (§1) et
-licence (§2.3).
+tâche lumière, API et page HTTP v2 (logo, nom par applique, actions système, mode groupe),
+persistance NVS, reconnexion Wi-Fi avec repli point d'accès, mDNS et nom DHCP, provisioning
+Improv sur BLE avec scan et extinction du BLE, manuel utilisateur (chapitres 1 et 2), mise à
+jour du firmware par HTTP local (§5.3). **Manques face à l'état de l'art local (Shelly, WLED,
+ESPHome), à garder en tête :** scènes et programmation (§2.5), authentification de la page
+(§3), signature des images (§5.3). Prochaines priorités, dans l'ordre : (1) matériel du ruban
+(§6), (2) mémoire avec BLE actif (§4.3), (3) scènes et programmation (§2.5), (4) authentification
+(§3), (5) mise à jour des versions (§2.3), (6) CI (§5.6), (7) devcontainer (§5.5). Deux questions
+en attente du propriétaire : batterie ou non (§1) et licence (§2.3).
 
 ---
 
@@ -303,8 +306,11 @@ contenu mixte https→http), Matter (pile trop lourde ici).
   Playwright sur la vraie page : découverte en 5 s, commandes reçues par la seconde lampe.
 - [ ] **P3 — Mode groupe, suite** : afficher l'état des autres lampes (allumée ou non), piloter
   un sous-ensemble (cases à cocher), mémoriser le choix « Toutes » entre deux visites.
-- [ ] **P3 — Scènes et programmation** : scènes mémorisées (couleur + effet + luminosité),
-  minuterie d'extinction, programmation horaire (nécessite l'heure par SNTP).
+- [ ] **P1 — Scènes et programmation** (manque face à l'état de l'art, rappelé le 2026-10-04) :
+  scènes mémorisées en NVS (nom + couleur + effet + luminosité, 8 maximum) avec boutons dans la
+  page et application au groupe ; minuterie d'extinction (« éteindre dans 30 min ») ;
+  programmation horaire (allumage/extinction par jour de semaine), ce qui demande l'heure par
+  SNTP (`esp_idf_svc::sntp`) et un fuseau horaire configurable depuis la page.
 - [ ] **P3 — Effets supplémentaires** et vitesse d'effet réglable depuis la page.
 
 ---
@@ -323,9 +329,12 @@ n'a aucun `unwrap()` dans les callbacks : `on_write` ne fait que relayer vers un
 - [ ] **P3 — Sécurité BLE** : Improv ne prévoit pas d'appairage, la protection est l'appui sur
   BOOT. Un appairage avec bonding (`ble_device.security().set_auth(...)`,
   `CONFIG_BT_NIMBLE_NVS_PERSIST=y`) n'aurait de sens qu'avec un service de pilotage BLE (§2.2).
-- [ ] **P2 — Sécurité HTTP** : aucune authentification sur l'API, y compris `/api/system/*` et
-  `/api/name`. Acceptable sur le point d'accès de secours (mot de passe WPA2) et sur un réseau
-  domestique ; prévoir au minimum un jeton si la lampe est exposée au-delà.
+- [ ] **P1 — Authentification de la page** (manque face à l'état de l'art, rappelé le
+  2026-10-04) : aucune protection aujourd'hui sur l'API, y compris `/api/system/*`, `/api/name` et
+  la mise à jour. Plan : mot de passe optionnel défini depuis la page (haché en NVS), HTTP Basic
+  ou cookie de session sur toutes les routes sauf la page elle-même et `/api/light` en lecture ;
+  exempter le point d'accès de secours (déjà protégé par WPA2) pour ne pas bloquer la première
+  configuration ; le mode groupe devra transmettre le même mot de passe aux autres lampes.
 
 ### `crates/wifi/src/lib.rs`
 

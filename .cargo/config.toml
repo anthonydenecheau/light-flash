@@ -3,7 +3,7 @@ target = "riscv32imc-esp-espidf"
 
 [target.riscv32imc-esp-espidf]
 linker = "ldproxy"
-runner = "espflash flash --monitor"
+runner = "espflash flash --monitor --partition-table partitions.csv"
 # Nécessaire pour le build natif d'esp-idf-sys avec l'ESP32-C3.
 # Voir https://github.com/ivmarkov/embuild/issues/16
 rustflags = ["--cfg", "espidf_time64"]

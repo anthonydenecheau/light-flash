@@ -21,6 +21,7 @@ pub mod reconnect;
 pub mod render;
 pub mod state;
 pub mod status;
+pub mod version;
 
 pub use api::{LightPatch, LightView};
 pub use color::Gamma;

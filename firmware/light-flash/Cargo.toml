@@ -19,6 +19,9 @@ storage.workspace = true
 http-server.workspace = true
 improv.workspace = true
 esp32-nimble.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
 toml-cfg.workspace = true
 
 [build-dependencies]

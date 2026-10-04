@@ -22,6 +22,12 @@ SECS    ?=   # durée max du moniteur série (run, example, monitor) ; vide = il
 CHIP    := esp32c3
 TARGET  := riscv32imc-esp-espidf
 DIST    := dist
+PARTITIONS := partitions.csv
+# Version du workspace (Cargo.toml racine), nom des images publiées.
+VERSION := $(shell sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)
+# Serveur de mises à jour local : ce PC, port 8000 (voir publish / serve-update).
+UPDATE_URL ?= http://$(shell hostname -I 2>/dev/null | awk '{print $$1}'):8000
+NOTES ?=
 
 # Crates du workspace, et sous-ensemble testable sur l'hôte (sans dépendance ESP).
 BINS        := light-flash hardware-check
@@ -70,13 +76,13 @@ WS_EXCLUDE := $(if $(wildcard cfg.toml),,--exclude hardware-check)
 
 .PHONY: help setup setup-system setup-rust setup-serial doctor \
         build build-all release check clippy fmt fmt-check lint test clean \
-        run flash monitor erase example image size
+        run flash monitor erase example image size publish serve-update
 
 # ---- Aide ------------------------------------------------------------------
 help: ## Affiche cette aide
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo
-	@echo "Variables : CRATE=$(CRATE) ($(CRATES))  RELEASE=$(RELEASE)  PORT=$(PORT)  EX=$(EX)  SECS=$(SECS)"
+	@echo "Variables : CRATE=$(CRATE) ($(CRATES))  RELEASE=$(RELEASE)  PORT=$(PORT)  EX=$(EX)  SECS=$(SECS)  VERSION=$(VERSION)  UPDATE_URL=$(UPDATE_URL)"
 
 # ---- Installation (Ubuntu) -------------------------------------------------
 setup: setup-system setup-rust setup-serial doctor ## Installe tout : paquets, toolchain Rust, outils ESP, accès série
@@ -145,15 +151,15 @@ clean: ## Nettoie target/ et dist/
 
 # ---- Flash / moniteur ------------------------------------------------------
 run: ## Compile, flashe et ouvre le moniteur série (SECS=30 borne le moniteur seulement, jamais le flash)
-ifeq ($(SECS),)
-	$(SERIAL_SH) 'cargo run -p $(CRATE) $(CARGO_FLAGS) -- $(PORT_FLAG)'
-else
-	$(MAKE) flash CRATE=$(CRATE) RELEASE=$(RELEASE) PORT=$(PORT)
-	$(MAKE) monitor CRATE=$(CRATE) RELEASE=$(RELEASE) PORT=$(PORT) SECS=$(SECS)
-endif
+	$(MAKE) flash CRATE=$(CRATE) RELEASE=$(RELEASE) PORT=$(PORT) EX=$(EX)
+	$(MAKE) monitor CRATE=$(CRATE) RELEASE=$(RELEASE) PORT=$(PORT) SECS=$(SECS) EX=$(EX)
 
-flash: build ## Flashe l'ELF sans ouvrir le moniteur (jamais borné : une écriture interrompue rend la carte non amorçable)
-	$(SERIAL_SH) 'espflash flash --chip $(CHIP) $(PORT_FLAG) $(ELF)'
+# Bootloader produit par esp-idf-sys avec notre sdkconfig (rollback OTA), plutôt que celui
+# embarqué dans espflash ; le plus récent si plusieurs builds coexistent.
+BOOTLOADER_CMD = ls -t target/$(TARGET)/$(PROFILE)/build/esp-idf-sys-*/out/build/bootloader/bootloader.bin | head -1
+
+flash: build ## Flashe l'ELF + bootloader du projet + partitions.csv (jamais borné : une écriture interrompue rend la carte non amorçable)
+	$(SERIAL_SH) 'espflash flash --chip $(CHIP) --bootloader "$$($(BOOTLOADER_CMD))" --partition-table $(PARTITIONS) $(PORT_FLAG) $(ELF)'
 
 monitor: ## Moniteur série seul (SECS=30 pour le borner)
 	$(SERIAL_SH) '$(TIMEOUT)espflash monitor $(PORT_FLAG) $(NONINT) --elf $(ELF)$(TIMEOUT_OK)'
@@ -171,10 +177,22 @@ else
 	$(MAKE) monitor CRATE=$(CRATE) EX=$(EX) RELEASE=$(RELEASE) PORT=$(PORT) SECS=$(SECS)
 endif
 
-image: build ## Image flashable autonome (bootloader + partitions + app) dans dist/
+image: build ## Image flashable autonome par câble (bootloader + partitions + app) dans dist/
 	mkdir -p $(DIST)
-	espflash save-image --chip $(CHIP) --merge --skip-padding $(ELF) $(DIST)/$(CRATE)-$(PROFILE).bin
+	espflash save-image --chip $(CHIP) --merge --skip-padding --bootloader "$$($(BOOTLOADER_CMD))" --partition-table $(PARTITIONS) $(ELF) $(DIST)/$(CRATE)-$(PROFILE).bin
 	@ls -l $(DIST)/$(CRATE)-$(PROFILE).bin
+
+publish: ## Image release de light-flash + manifest.json dans dist/update/ (UPDATE_URL=http://pc:8000 NOTES="...")
+	cargo build -p light-flash --release
+	mkdir -p $(DIST)/update
+	espflash save-image --chip $(CHIP) target/$(TARGET)/release/light-flash $(DIST)/update/light-flash-$(VERSION).bin
+	@cd $(DIST)/update && SHA=$$(sha256sum light-flash-$(VERSION).bin | cut -d' ' -f1) && SIZE=$$(stat -c %s light-flash-$(VERSION).bin) \
+	  && printf '{\n  "version": "%s",\n  "url": "%s/light-flash-%s.bin",\n  "sha256": "%s",\n  "size": %s,\n  "notes": "%s"\n}\n' \
+	     "$(VERSION)" "$(UPDATE_URL)" "$(VERSION)" "$$SHA" "$$SIZE" "$(NOTES)" > manifest.json && cat manifest.json
+	@echo ">> Servir avec : make serve-update ; côté lampe, serveur de mises à jour = $(UPDATE_URL)"
+
+serve-update: ## Sert dist/update/ sur le port 8000 (Ctrl-C pour arrêter)
+	python3 -m http.server 8000 --bind 0.0.0.0 --directory $(DIST)/update
 
 size: build ## Taille de l'ELF produit
 	@ls -l $(ELF)

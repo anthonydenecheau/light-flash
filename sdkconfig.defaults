@@ -5,8 +5,22 @@
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=12288
 CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=4096
 
+# Taille de l'image : code C d'ESP-IDF compilé en -Os (au lieu de -Og), pas de paquet de
+# certificats TLS (aucune connexion sortante chiffrée). Deux emplacements OTA de 1,94 Mo.
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
+# Fonctions Wi-Fi inutiles sur une lampe domestique : WPA2-Entreprise, roaming 802.11r, WPS.
+CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT=n
+CONFIG_ESP_WIFI_11R_SUPPORT=n
+# IPv6 non utilisé (mDNS et la page fonctionnent en IPv4) : code et tampons en moins.
+CONFIG_LWIP_IPV6=n
+
 # Nom envoyé à la box par DHCP (option 12) : http://light-flash/ sur beaucoup de box.
 CONFIG_LWIP_LOCAL_HOSTNAME="light-flash"
+
+# Mise à jour par le réseau : une image fraîchement installée doit se déclarer valide au
+# démarrage (mark_running_slot_valid), sinon le bootloader revient à la précédente.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
 # Tick FreeRTOS à 1000 Hz (100 Hz par défaut) pour des sleeps à la ms.
 #CONFIG_FREERTOS_HZ=1000

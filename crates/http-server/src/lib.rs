@@ -67,8 +67,8 @@ pub type PeersProvider = dyn Fn() -> Vec<PeerView> + Send + Sync + 'static;
 pub type Action = dyn Fn() + Send + Sync + 'static;
 /// Action déclenchée par la page, pouvant échouer (message renvoyé au client).
 pub type FallibleAction = dyn Fn() -> Result<()> + Send + Sync + 'static;
-/// Enregistrement d'un nom validé par le firmware.
-pub type NameSetter = dyn Fn(&str) -> Result<()> + Send + Sync + 'static;
+/// Enregistrement d'une chaîne validée par le firmware (nom, adresse du serveur).
+pub type StringSetter = dyn Fn(&str) -> Result<()> + Send + Sync + 'static;
 
 /// Actions système fournies par le firmware ; chacune doit rendre la main vite.
 pub struct SystemHooks {
@@ -77,7 +77,36 @@ pub struct SystemHooks {
     /// Rendre la lampe visible en Bluetooth et autoriser la configuration (= appui sur BOOT).
     pub ble_visible: Box<Action>,
     /// Enregistre un nouveau nom (validé par le firmware) ; prend effet au redémarrage.
-    pub set_name: Box<NameSetter>,
+    pub set_name: Box<StringSetter>,
+}
+
+/// Mise à jour disponible sur le serveur local.
+#[derive(Debug, Clone, Serialize)]
+pub struct UpdateAvailable {
+    pub version: String,
+    pub notes: String,
+    pub size: u64,
+}
+
+/// Instantané pour `GET /api/update`.
+#[derive(Debug, Clone, Serialize)]
+pub struct UpdateView {
+    pub current: String,
+    pub url: String,
+    pub available: Option<UpdateAvailable>,
+    /// `idle`, `checking`, `downloading`, `verifying`, `rebooting`, `failed`.
+    pub phase: String,
+    pub progress: u8,
+    pub error: Option<String>,
+    pub last_check_s: Option<u64>,
+    pub running_slot: String,
+}
+
+pub struct UpdateHooks {
+    pub status: Box<dyn Fn() -> UpdateView + Send + Sync + 'static>,
+    pub check: Box<Action>,
+    pub install: Box<FallibleAction>,
+    pub set_url: Box<StringSetter>,
 }
 
 /// Points d'entrée réservés aux builds de debug (`cfg!(debug_assertions)` côté firmware).
@@ -97,7 +126,14 @@ pub struct HttpContext {
     pub status: Box<StatusProvider>,
     pub peers: Box<PeersProvider>,
     pub system: SystemHooks,
+    pub update: UpdateHooks,
     pub debug: Option<DebugHooks>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UrlForm<'a> {
+    url: &'a str,
 }
 
 #[derive(Deserialize)]
@@ -120,6 +156,7 @@ pub fn start(ctx: HttpContext) -> Result<EspHttpServer<'static>> {
         status,
         peers,
         system,
+        update,
         debug,
     } = ctx;
     let status = std::sync::Arc::new(status);
@@ -298,6 +335,50 @@ pub fn start(ctx: HttpContext) -> Result<EspHttpServer<'static>> {
             200,
             &ok_json("Visible en Bluetooth pendant 5 minutes."),
         )
+    })?;
+
+    // ---- mise à jour du firmware
+    let UpdateHooks {
+        status: update_status,
+        check,
+        install,
+        set_url,
+    } = update;
+    server.fn_handler::<anyhow::Error, _>("/api/update", Method::Get, move |req| {
+        write_json(req, 200, &serde_json::to_vec(&update_status())?)
+    })?;
+    server.fn_handler::<anyhow::Error, _>("/api/update/check", Method::Post, move |req| {
+        check();
+        write_json(req, 200, &ok_json("Vérification lancée."))
+    })?;
+    server.fn_handler::<anyhow::Error, _>("/api/update/install", Method::Post, move |req| {
+        match install() {
+            Ok(()) => {
+                warn!("mise à jour lancée depuis la page");
+                write_json(req, 200, &ok_json("Mise à jour lancée."))
+            }
+            Err(e) => write_json(req, 409, &error_json(&e.to_string())),
+        }
+    })?;
+    server.fn_handler::<anyhow::Error, _>("/api/update/url", Method::Post, move |mut req| {
+        let body = match read_body(&mut req)? {
+            Ok(body) => body,
+            Err(status) => {
+                return write_json(req, status, &error_json("corps absent ou trop long"))
+            }
+        };
+        let form: UrlForm = match serde_json::from_slice(&body) {
+            Ok(form) => form,
+            Err(e) => return write_json(req, 400, &error_json(&format!("JSON invalide : {e}"))),
+        };
+        match set_url(form.url) {
+            Ok(()) => write_json(
+                req,
+                200,
+                &ok_json("Serveur enregistré, vérification lancée."),
+            ),
+            Err(e) => write_json(req, 400, &error_json(&e.to_string())),
+        }
     })?;
 
     if let Some(hooks) = debug {

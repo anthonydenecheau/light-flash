@@ -9,6 +9,9 @@ wifi_ssid = ""
 wifi_psk = ""
 # Mot de passe du point d'accès de secours : 8 caractères minimum, vide = réseau ouvert.
 ap_password = "light-flash"
+# Serveur de mises à jour (dossier publié par `make publish`, servi par `make serve-update`),
+# modifiable ensuite depuis la page. Vide = pas de vérification.
+update_url = ""
 
 # Test de la carte : Wi-Fi obligatoire, les valeurs du modèle font échouer le build.
 [hardware-check]
