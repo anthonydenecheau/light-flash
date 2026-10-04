@@ -174,9 +174,18 @@ et ses adresses faciles à retenir (`nom.local`, `nom`).
 
 ### 2.5 Plusieurs lampes
 
-Chaque lampe a sa page et ses réglages. Donnez un nom différent à chacune (§2.4) et ajoutez
-chaque page à l'écran d'accueil. Pour les piloter d'un seul geste, utilisez un groupe de
-lumières dans Home Assistant ; un mode « groupe » dans la page est prévu.
+Chaque lampe a sa page et ses réglages. Donnez un nom différent à chacune (§2.4). Les lampes se
+découvrent entre elles sur le réseau de la maison : la carte *Réseau* affiche les autres lampes
+(« Autres lampes »), chacune cliquable pour ouvrir sa page.
+
+Dès qu'une autre lampe est connue, un sélecteur apparaît en haut de la carte *Lumière* :
+
+- **Cette lampe** : les réglages ne concernent que la lampe dont la page est ouverte.
+- **Toutes les lampes** : chaque réglage (allumer, couleur, luminosité, effet) est envoyé en même
+  temps à toutes les lampes découvertes. Si l'une ne répond pas, un message le signale.
+
+La découverte prend jusqu'à une minute après l'allumage d'une lampe. Pour des scènes, des
+programmations ou un pilotage à la voix, utilisez un groupe de lumières dans Home Assistant.
 
 ## 3. Résolution des problèmes
 

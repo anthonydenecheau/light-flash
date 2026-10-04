@@ -34,6 +34,8 @@ input[type=range]{width:100%;accent-color:var(--accent);height:2.2rem;margin:0}
 .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:.3rem;background:var(--bg);padding:.3rem;border-radius:12px}
 .seg button{border:0;background:transparent;padding:.6rem .3rem;border-radius:9px;font:inherit;font-size:.92rem;color:var(--muted);cursor:pointer}
 .seg button.sel{background:var(--card);color:var(--text);box-shadow:var(--shadow);font-weight:600}
+.seg.two{grid-template-columns:repeat(2,1fr);margin-bottom:.9rem}
+.peers a{color:var(--accent);text-decoration:none}.peers span{color:var(--muted)}
 dl{display:grid;grid-template-columns:auto 1fr;gap:.45rem 1rem;margin:0;font-size:.93rem}dt{color:var(--muted)}dd{margin:0;overflow-wrap:anywhere}dd a{color:var(--accent);text-decoration:none}
 .bars{display:inline-flex;gap:2px;align-items:flex-end;height:.85rem;margin-right:.4rem;vertical-align:-1px}.bars i{width:3px;background:var(--line);border-radius:1px}.bars i.on{background:var(--ok)}
 details{margin-top:1rem}summary{cursor:pointer;color:var(--accent);font-weight:500;list-style:none;font-size:.95rem}summary::-webkit-details-marker{display:none}summary::before{content:"▸ "}details[open] summary::before{content:"▾ "}
@@ -59,6 +61,9 @@ body.busy section{opacity:.6;pointer-events:none}
 
 <section>
   <h2>Lumière</h2>
+  <div class="seg two" id="target" hidden role="group" aria-label="Lampes pilotées">
+    <button data-t="self" class="sel">Cette lampe</button><button data-t="all">Toutes les lampes</button>
+  </div>
   <button class="power" id="power" aria-pressed="false">Allumer</button>
   <div class="row"><span>Couleur</span><span class="val" id="colorval">–</span></div>
   <div class="swatches" id="swatches"></div>
@@ -77,6 +82,7 @@ body.busy section{opacity:.6;pointer-events:none}
     <dt>Signal</dt><dd id="rssi">–</dd>
     <dt>Adresse</dt><dd id="ip">–</dd>
     <dt>Accès</dt><dd id="urls">–</dd>
+    <dt>Autres lampes</dt><dd id="peers" class="peers">–</dd>
   </dl>
   <details>
     <summary>Changer de réseau Wi-Fi</summary>
@@ -110,11 +116,13 @@ body.busy section{opacity:.6;pointer-events:none}
 const $ = id => document.getElementById(id);
 const PRESETS = ["#ffb464","#ffd9a8","#ffffff","#cfe3ff","#ff2d2d","#ff8c1a","#ffd21f","#2ecc71","#19c3c3","#2f80ff","#a855f7","#ff5fa2"];
 const EFFECTS = {solid:"uni", breathe:"respiration", rainbow:"arc-en-ciel"};
-let light = null, status = null, toastTimer;
+let light = null, status = null, toastTimer, peers = [], target = "self";
 
 function toast(msg, ms = 2600) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), ms); }
+// Corps envoyé en text/plain : requête « simple » au sens CORS, donc pilotable d'une lampe à
+// l'autre sans pré-vol OPTIONS (le serveur ne lit pas le Content-Type).
 async function api(path, body) {
-  const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(body) });
   let data = {}; try { data = await r.json(); } catch (_) {}
   if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
   return data;
@@ -132,9 +140,23 @@ let pending = null;
 async function patch(fields) {
   if (pending) { pending.next = Object.assign(pending.next || {}, fields); return; }
   pending = { next: null };
-  try { paintLight(await api("/api/light", fields)); } catch (e) { toast("Erreur : " + e.message); }
+  try {
+    const mine = api("/api/light", fields);
+    const others = target === "all" ? peers.map(p => api(`http://${p.ip}:${p.port}/api/light`, fields).then(() => null, () => p.name)) : [];
+    paintLight(await mine);
+    const failed = (await Promise.all(others)).filter(Boolean);
+    if (failed.length) toast("Injoignable : " + failed.join(", "));
+  } catch (e) { toast("Erreur : " + e.message); }
   const next = pending.next; pending = null; if (next) patch(next);
 }
+function paintPeers(list) {
+  peers = list;
+  const t = $("target"); t.hidden = list.length === 0; if (list.length === 0) target = "self";
+  t.querySelector('[data-t="all"]').textContent = `Toutes les lampes (${list.length + 1})`;
+  t.querySelectorAll("button").forEach(b => b.classList.toggle("sel", b.dataset.t === target));
+  $("peers").innerHTML = list.length ? list.map(p => `<a href="http://${p.ip}:${p.port}/">${p.name}</a>`).join(" · ") : "<span>aucune pour l'instant</span>";
+}
+document.querySelectorAll("#target button").forEach(b => b.onclick = () => { target = b.dataset.t; paintPeers(peers); toast(target === "all" ? "Les réglages s'appliquent à toutes les lampes" : "Réglages de cette lampe seulement", 1800); });
 const sw = $("swatches");
 for (const c of PRESETS) { const b = document.createElement("button"); b.type = "button"; b.dataset.c = c; b.style.background = c; b.setAttribute("aria-label", "Couleur " + c); b.onclick = () => patch({ color: c }); sw.appendChild(b); }
 const wheel = document.createElement("label"); wheel.title = "Autre couleur"; const inp = document.createElement("input"); inp.type = "color"; inp.oninput = () => patch({ color: inp.value }); wheel.appendChild(inp); sw.appendChild(wheel);
@@ -157,7 +179,7 @@ function paintStatus(s) {
 }
 async function refresh() {
   if (document.visibilityState !== "visible") return;
-  try { paintLight(await api("/api/light")); paintStatus(await api("/api/status")); }
+  try { paintLight(await api("/api/light")); paintStatus(await api("/api/status")); paintPeers((await api("/api/peers")).peers || []); }
   catch (e) { $("netline").textContent = "Lampe injoignable"; $("dot").className = "dot"; }
 }
 async function action(path, body, confirmMsg) {

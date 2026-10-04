@@ -24,7 +24,7 @@ static ICON_PNG: &[u8] = include_bytes!("static/icon-192.png");
 const MAX_BODY: usize = 512;
 /// Pile de la tâche httpd : le parsing JSON et anyhow dépassent les 4 Ko par défaut.
 const STACK_SIZE: usize = 10 * 1024;
-const MAX_URI_HANDLERS: usize = 20;
+const MAX_URI_HANDLERS: usize = 24;
 
 /// Appelé avec le SSID et le mot de passe reçus par `POST /connect`.
 /// Doit valider, enregistrer et rendre la main rapidement (le redémarrage éventuel est
@@ -51,6 +51,17 @@ pub struct StatusView {
 }
 
 pub type StatusProvider = dyn Fn() -> StatusView + Send + Sync + 'static;
+
+/// Une autre lampe découverte sur le réseau (mode groupe).
+#[derive(Debug, Clone, Serialize)]
+pub struct PeerView {
+    pub name: String,
+    pub hostname: String,
+    pub ip: String,
+    pub port: u16,
+}
+
+pub type PeersProvider = dyn Fn() -> Vec<PeerView> + Send + Sync + 'static;
 
 /// Action déclenchée par la page, sans résultat.
 pub type Action = dyn Fn() + Send + Sync + 'static;
@@ -84,6 +95,7 @@ pub struct HttpContext {
     pub light: SharedState,
     pub on_wifi_credentials: Box<OnWifiCredentials>,
     pub status: Box<StatusProvider>,
+    pub peers: Box<PeersProvider>,
     pub system: SystemHooks,
     pub debug: Option<DebugHooks>,
 }
@@ -106,6 +118,7 @@ pub fn start(ctx: HttpContext) -> Result<EspHttpServer<'static>> {
         light,
         on_wifi_credentials,
         status,
+        peers,
         system,
         debug,
     } = ctx;
@@ -172,6 +185,13 @@ pub fn start(ctx: HttpContext) -> Result<EspHttpServer<'static>> {
     let st = status.clone();
     server.fn_handler::<anyhow::Error, _>("/api/status", Method::Get, move |req| {
         write_json(req, 200, &serde_json::to_vec(&st())?)
+    })?;
+
+    // Autres lampes découvertes (mode groupe) ; la page les pilote directement par leur adresse,
+    // d'où l'en-tête CORS sur toutes les réponses JSON.
+    server.fn_handler::<anyhow::Error, _>("/api/peers", Method::Get, move |req| {
+        let body = serde_json::json!({ "peers": peers() });
+        write_json(req, 200, &serde_json::to_vec(&body)?)
     })?;
 
     let state = light.clone();
@@ -347,6 +367,8 @@ fn write_json(req: Request<&mut EspHttpConnection<'_>>, status: u16, body: &[u8]
         &[
             ("Content-Type", "application/json"),
             ("Cache-Control", "no-store"),
+            // Mode groupe : la page d'une lampe pilote les autres par leur adresse.
+            ("Access-Control-Allow-Origin", "*"),
         ],
     )?;
     resp.write_all(body)?;

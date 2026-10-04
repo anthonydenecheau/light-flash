@@ -262,9 +262,8 @@ bit 0 identify, bit 1 device info, bit 2 scan, bit 3 hostname, bit 4 device name
   redémarrage), nom d'hôte dérivé (`light_core::naming::hostname_from`, testé) appliqué à mDNS,
   DHCP (`esp_netif_set_hostname`), SSID du point d'accès et nom BLE. Vérifié : « Salon 1 » →
   `salon-1.local` joignable. Reste : la commande Improv Device name (`0x06`), P3.
-- [ ] **P2 — Piloter plusieurs appliques ensemble** (validé le 2026-10-04 : documenter Home
-  Assistant, puis mode groupe dans la page ; ordre global : nom par applique, actions dans la
-  page, mode groupe). Chaque lampe a sa
+- [x] **Piloter plusieurs appliques ensemble** (fait le 2026-10-04, voir §2.5 : mode groupe
+  dans la page ; Home Assistant documenté dans le README et le manuel). Chaque lampe a sa
   page et ses réglages ; rien ne les relie. Options : (a) **Home Assistant** : groupe de lumières,
   zéro code côté lampe, c'est la voie naturelle pour qui a une domotique ; (b) **groupe dans la
   page** : la lampe découvre ses semblables par mDNS (`_http._tcp`), les expose sur `/api/peers`,
@@ -297,8 +296,13 @@ contenu mixte https→http), Matter (pile trop lourde ici).
   12 pastilles + roue, luminosité, effets), carte Réseau (SSID, signal, adresses, changement de
   Wi-Fi, oubli), carte Lampe (nom, Bluetooth, redémarrage, informations), rafraîchissement
   toutes les 4 s, toasts, confirmations. Vérifiée en clair et sombre avec Chrome sans tête.
-- [ ] **P2 — Mode groupe** (validé) : découverte des autres lampes par mDNS (`_http._tcp`),
-  `/api/peers`, en-têtes CORS sur l'API, et dans la page un sélecteur « toutes les lampes ».
+- [x] **Mode groupe** (fait le 2026-10-04) : thread `discovery` (mDNS `_http._tcp`, TXT
+  `light-flash=1`, cache rafraîchi chaque minute), `GET /api/peers`, CORS `*` sur l'API, POST en
+  `text/plain` (pas de pré-vol), sélecteur « Cette lampe / Toutes les lampes » et liste des autres
+  lampes dans la page. Vérifié avec une seconde lampe simulée sur le PC (zeroconf + mini API) et
+  Playwright sur la vraie page : découverte en 5 s, commandes reçues par la seconde lampe.
+- [ ] **P3 — Mode groupe, suite** : afficher l'état des autres lampes (allumée ou non), piloter
+  un sous-ensemble (cases à cocher), mémoriser le choix « Toutes » entre deux visites.
 - [ ] **P3 — Scènes et programmation** : scènes mémorisées (couleur + effet + luminosité),
   minuterie d'extinction, programmation horaire (nécessite l'heure par SNTP).
 - [ ] **P3 — Effets supplémentaires** et vitesse d'effet réglable depuis la page.
@@ -504,10 +508,32 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
   ```
   Slots de 1,75 Mo : l'image release fait 1,51 Mo le 2026-10-04 (BLE + Wi-Fi + HTTP + mDNS), la
   debug 1,75 Mo ; l'OTA se fera en release.
-- [ ] **P2 — OTA par HTTP** avec `esp_idf_svc::ota::EspOta` : la lampe télécharge l'image depuis
-  une URL fournie (serveur local pendant le dev), écrit dans le slot inactif, redémarre, confirme
-  (`mark_running_slot_valid`) après un boot sain, sinon rollback automatique
-  (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`).
+- [ ] **P1 — Mise à jour par HTTP depuis un serveur local** (demande du 2026-10-04 : « je
+  déploie l'image, l'utilisateur est notifié dans l'application, il clique, le firmware se
+  déploie »). Faisable avec `esp_idf_svc::ota::EspOta` ; plan :
+  1. **Partitions** : `partitions.csv` ci-dessus (deux slots de 1,75 Mo, `otadata`),
+     `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y` ; flashé une fois par câble (`make erase` puis
+     `make flash` avec `--partition-table`) ; `make image RELEASE=1` produit aussi l'image
+     *application seule* `light-flash-<version>.bin` (sans `--merge`), la seule à publier.
+  2. **Serveur local** : n'importe quel serveur statique (`python3 -m http.server`, nginx, NAS)
+     servant `manifest.json` = `{ "version": "0.2.0", "url": "http://<pc>:8000/light-flash-0.2.0.bin",
+     "sha256": "…", "notes": "…" }` et le `.bin`. Cible `make publish` qui construit, calcule le
+     SHA-256 et dépose les deux fichiers dans `dist/update/`. Adresse du serveur dans `cfg.toml`
+     (`update_url`) et modifiable depuis la page, stockée en NVS.
+  3. **Lampe** : un thread vérifie le manifeste au démarrage, toutes les 6 h et sur demande ;
+     `GET /api/update` renvoie version courante, version disponible, notes, progression ;
+     `POST /api/update` lance le téléchargement en flux (client HTTP esp-idf-svc, tampon de 4 Ko)
+     dans le slot inactif via `EspOta::initiate_update` / `write` / `complete`, vérifie le SHA-256
+     et la version du descripteur d'application, puis redémarre. Au boot suivant, le firmware se
+     valide (`mark_running_slot_valid`) une fois Wi-Fi et HTTP opérationnels ; sinon le bootloader
+     revient à l'ancienne image. Mémoire : tout en flux, aucune grosse allocation.
+  4. **Page** : bandeau « Mise à jour 0.2.0 disponible » avec les notes et un bouton
+     « Mettre à jour », barre de progression, message de redémarrage ; c'est la « notification »
+     (la page vérifie à chaque ouverture et toutes les quelques minutes). Une vraie notification
+     poussée sur le téléphone demanderait Home Assistant ou un service en ligne : hors périmètre.
+  5. **Sécurité** : réseau local seulement, HTTP sans TLS mais SHA-256 obligatoire ; plus tard,
+     signature des images (§ ci-dessous) pour refuser un `.bin` étranger.
+  Ordre de grandeur : 1,5 Mo à 300–500 Ko/s sur le réseau local, soit moins de 10 s.
 - [ ] **P3 — Signature des images** (`CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=y`) une fois l'OTA
   en place.
 

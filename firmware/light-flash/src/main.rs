@@ -14,7 +14,7 @@ use esp_idf_svc::{
     nvs::EspDefaultNvsPartition,
     sys,
 };
-use http_server::{DebugHooks, HttpContext, StatusView, SystemHooks};
+use http_server::{DebugHooks, HttpContext, PeerView, StatusView, SystemHooks};
 use light_core::{naming, LightState, SharedIndication, SharedState};
 use log::info;
 use rgb_led::WS2812RMT;
@@ -26,6 +26,7 @@ use std::{
 use storage::{Storage, WifiCredentials};
 use wifi::AccessPoint;
 
+mod discovery;
 mod light_task;
 mod network;
 mod persistence;
@@ -127,8 +128,16 @@ fn main() -> Result<()> {
     let mut mdns = EspMdns::take()?;
     mdns.set_hostname(hostname)?;
     mdns.set_instance_name(display_name)?;
-    mdns.add_service(None, "_http", "_tcp", 80, &[("path", "/")])?;
+    mdns.add_service(
+        Some(display_name),
+        "_http",
+        "_tcp",
+        80,
+        &[("path", "/"), discovery::TXT_MARKER, ("name", display_name)],
+    )?;
     info!("mDNS : http://{hostname}.local/");
+    // Découverte des autres lampes (mode groupe de la page) ; le thread garde `mdns`.
+    let peers = discovery::spawn(mdns, hostname)?;
 
     // Provisioning Improv sur BLE : bouton BOOT (GPIO9, pull-up externe) pour autoriser.
     let mut button = PinDriver::input(peripherals.pins.gpio9)?;
@@ -219,14 +228,27 @@ fn main() -> Result<()> {
             ble_off: Box::new(move || ble_off.store(true, Ordering::Relaxed)),
         }
     });
+    let peers_view = Box::new(move || {
+        peers
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .iter()
+            .map(|p| PeerView {
+                name: p.name.clone(),
+                hostname: p.hostname.clone(),
+                ip: p.ip.to_string(),
+                port: p.port,
+            })
+            .collect()
+    });
     let _server = http_server::start(HttpContext {
         light: shared,
         on_wifi_credentials,
         status,
+        peers: peers_view,
         system,
         debug,
     })?;
-    let _mdns = mdns;
 
     loop {
         thread::sleep(Duration::from_secs(60));

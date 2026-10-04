@@ -41,7 +41,7 @@ d'ESP-IDF, versions communes dans `[workspace.dependencies]`, `Cargo.lock` commi
 | `crates/rgb-led/` | lib | Driver WS2812 via RMT (API `rmt-legacy`), N pixels (`set_pixels`), impulsions précalculées. |
 | `crates/wifi/` | lib | Wi-Fi bloquant sur un driver réutilisable : `connect_sta` (15 s max) et `start_access_point`, plus le raccourci `wifi()` pour `hardware-check`. |
 | `crates/storage/` | lib | NVS (espace `light`) : identifiants Wi-Fi, dernier état de la lampe (`light_state`, 7 octets versionnés), nom de la lampe ; `factory_reset` ; `SharedStorage` + `storage::lock`. |
-| `crates/http-server/` | lib | `GET /` page de pilotage (HTML + CSS + JS vanilla en français, logo en data URI, **gzip préparé par `build.rs`**, ~10 Ko servis), `/icon-192.png`, `/manifest.json` (écran d'accueil), `GET /api/status` (`StatusView` fourni par le firmware), `GET/POST /api/light` (`LightView` / `LightPatch`), `POST /connect`, `POST /api/name`, `POST /api/system/{restart,forget-wifi,ble}` (`SystemHooks`), et en build debug `DebugHooks` (`/api/debug/wifi-disconnect`, `improv-authorize`, `ble-off`). Tout est passé via `HttpContext`. |
+| `crates/http-server/` | lib | `GET /` page de pilotage (HTML + CSS + JS vanilla en français, logo en data URI, **gzip préparé par `build.rs`**, ~10 Ko servis), `/icon-192.png`, `/manifest.json` (écran d'accueil), `GET /api/status` (`StatusView`), `GET /api/peers` (`PeerView`, mode groupe), `GET/POST /api/light` (`LightView` / `LightPatch`), `POST /connect`, `POST /api/name`, `POST /api/system/{restart,forget-wifi,ble}` (`SystemHooks`), et en build debug `DebugHooks` (`/api/debug/wifi-disconnect`, `improv-authorize`, `ble-off`). Tout est passé via `HttpContext` ; CORS `*` sur les réponses JSON. |
 
 Fichiers racine : `Cargo.toml` (membres, versions, profils), `.cargo/config.toml` (cible, `ldproxy`,
 runner `espflash`, `ESP_IDF_VERSION`), `rust-toolchain.toml`, `sdkconfig.defaults` (commun à tous
@@ -175,6 +175,14 @@ Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puc
   d'instance mDNS, de nom Improv et de titre de page. Figé au démarrage : `POST /api/name`
   enregistre puis redémarre. Les deux chaînes sont `Box::leak`ées en `&'static str` dans `main`.
   Vérifié le 2026-10-04 : « Salon 1 » → `salon-1.local` ; la Livebox résout aussi `<hôte>.home`.
+- **Mode groupe** : `discovery.rs` (thread propriétaire de `EspMdns`) interroge `_http._tcp` à
+  10 s, 30 s puis chaque minute et retient les services au TXT `light-flash=1` (hors soi-même) ;
+  `GET /api/peers` renvoie le cache. La page envoie alors ses commandes à chaque lampe par son
+  adresse IP (pas `.local`, Android ne le résout pas toujours) ; pour éviter le pré-vol CORS, les
+  POST partent en `text/plain` et toutes les réponses JSON portent `Access-Control-Allow-Origin: *`.
+  Test sans seconde carte : `scratchpad/fake_peer.py` (zeroconf + mini API, à relancer depuis le
+  dépôt si besoin : annonce `_http._tcp` avec `light-flash=1` sur le PC) et un script Playwright
+  qui clique dans la vraie page ; Playwright et zeroconf sont installés sur le PC.
 - Page de pilotage : un seul fichier `crates/http-server/src/static/index.html`, placeholder
   `__LOGO__` remplacé par `build.rs` (data URI de `logo-160.jpg`) puis gzippé ; `make build`
   suffit après modification. Rendu vérifié avec Chrome sans tête :
