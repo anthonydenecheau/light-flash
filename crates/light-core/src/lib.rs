@@ -12,12 +12,14 @@
 //!    ([`SaveScheduler`]) ; il est restauré au démarrage.
 
 pub mod api;
+pub mod button;
 pub mod color;
 pub mod persist;
 pub mod power;
 pub mod reconnect;
 pub mod render;
 pub mod state;
+pub mod status;
 
 pub use api::{LightPatch, LightView};
 pub use color::Gamma;
@@ -25,6 +27,7 @@ pub use persist::SaveScheduler;
 pub use render::Renderer;
 pub use rgb::RGB8;
 pub use state::{Effect, LightCommand, LightState};
+pub use status::{Indication, SharedIndication};
 
 /// État partagé entre les producteurs de commandes (HTTP, BLE, bouton) et la tâche lumière.
 /// Les producteurs appellent `lock().apply(cmd)` ; la tâche copie l'état à chaque image.

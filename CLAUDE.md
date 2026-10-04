@@ -31,13 +31,14 @@ d'ESP-IDF, versions communes dans `[workspace.dependencies]`, `Cargo.lock` commi
 
 | Chemin | Type | Rôle |
 |---|---|---|
-| `firmware/light-flash/` | binaire | Firmware principal : tâche lumière (`light_task.rs`, 50 images/s, seule à parler au driver), thread de persistance (`persistence.rs`, NVS après 2 s de calme), thread réseau (`network.rs` : possède le driver Wi-Fi, reconnexion avec backoff, repli point d'accès `light-flash` après 90 s, nouvel essai station toutes les 2 min), serveur HTTP de pilotage démarré avant le réseau. Démarre dans le dernier état enregistré, sinon allumée en blanc chaud. |
+| `firmware/light-flash/` | binaire | Firmware principal : tâche lumière (`light_task.rs`, 50 images/s, seule à parler au driver, rend les indications système si présentes), thread de persistance (`persistence.rs`, NVS après 2 s de calme), thread réseau (`network.rs` : possède le driver Wi-Fi, reconnexion avec backoff, repli point d'accès `light-flash` après 90 s, nouvel essai station toutes les 2 min, commandes `Connect` du provisioning), thread de provisioning (`provisioning.rs` : possède NimBLE, service Improv, bouton BOOT, reset usine), mDNS, serveur HTTP démarré avant le réseau. Démarre dans le dernier état enregistré, sinon allumée en blanc chaud. |
 | `firmware/hardware-check/` | binaire | Test de la carte : Wi-Fi STA + clignotement LED bleu/vert (rouge si échec Wi-Fi). |
-| `crates/light-core/` | lib | Domaine **sans dépendance ESP** : `LightState` (+ `to_bytes`/`from_bytes` versionnés, `Display`), `LightCommand`, `Effect`, `Renderer`, `Gamma`, `power::limit` (plafond de courant), `api::{LightView, LightPatch}` (JSON), `persist::SaveScheduler` (écriture différée), `reconnect::Policy` (machine à états de reconnexion Wi-Fi), `SharedState`. Testé sur l'hôte. |
+| `crates/light-core/` | lib | Domaine **sans dépendance ESP** : `LightState` (+ `to_bytes`/`from_bytes` versionnés, `Display`), `LightCommand`, `Effect`, `Renderer`, `Gamma`, `power::limit` (plafond de courant), `api::{LightView, LightPatch}` (JSON), `persist::SaveScheduler` (écriture différée), `reconnect::Policy` (reconnexion Wi-Fi), `status::Indication` (signalisation lumineuse), `button::ButtonTracker` (appui court/long), `SharedState`, `SharedIndication`. Testé sur l'hôte. |
+| `crates/improv/` | lib | Protocole Improv Wi-Fi BLE **sans dépendance ESP** : UUID, paquets RPC (checksum), `Machine` (autorisation, provisioning, résultat). Testé sur l'hôte. |
 | `crates/rgb-led/` | lib | Driver WS2812 via RMT (API `rmt-legacy`), N pixels (`set_pixels`), impulsions précalculées. |
 | `crates/wifi/` | lib | Wi-Fi bloquant sur un driver réutilisable : `connect_sta` (15 s max) et `start_access_point`, plus le raccourci `wifi()` pour `hardware-check`. |
 | `crates/storage/` | lib | NVS (espace `light`) : identifiants Wi-Fi et dernier état de la lampe (`light_state`, 7 octets versionnés) ; `SharedStorage` + `storage::lock`. |
-| `crates/http-server/` | lib | `GET /` page de pilotage (HTML embarqué, français), `GET/POST /api/light` (JSON `LightView` / `LightPatch`), `POST /connect` (identifiants Wi-Fi, callback fourni par le firmware), `POST /api/debug/wifi-disconnect` en build debug seulement (`DebugHooks`). |
+| `crates/http-server/` | lib | `GET /` page de pilotage (HTML embarqué, français), `GET/POST /api/light` (JSON `LightView` / `LightPatch`), `POST /connect` (identifiants Wi-Fi, callback fourni par le firmware), en build debug seulement (`DebugHooks`) : `POST /api/debug/wifi-disconnect` et `POST /api/debug/improv-authorize`. |
 
 Fichiers racine : `Cargo.toml` (membres, versions, profils), `.cargo/config.toml` (cible, `ldproxy`,
 runner `espflash`, `ESP_IDF_VERSION`), `rust-toolchain.toml`, `sdkconfig.defaults` (commun à tous
@@ -49,11 +50,12 @@ image, rend la trame, applique `power::limit` puis `set_pixels`. Le verrou n'est
 pendant l'accès au driver. `LED_COUNT` et `MAX_MILLIAMPS` sont dans `light_task.rs` (1 LED et
 500 mA tant que le ruban n'est pas câblé).
 
-Branche distante `origin/feature/connect2Wifi` : son contenu utile (point d'accès, serveur HTTP)
-a été revu, corrigé et intégré le 2026-10-04 dans `crates/wifi` et `crates/http-server` ; la
-branche peut être supprimée. Le BLE de l'ancien `main.rs` a été retiré en attendant Improv Wi-Fi
-(`BACKLOG.md` §2.4), qui reste le mode de provisioning principal prévu ; le portail HTTP en est
-le repli.
+**Provisioning Wi-Fi** : Improv Wi-Fi sur BLE (`BACKLOG.md` §2.4), implémenté le 2026-10-04.
+La lampe s'annonce en BLE sous `light-flash` avec le service Improv ; un appui court sur BOOT
+(GPIO9) autorise la réception des identifiants pendant 60 s ; la lampe se connecte, enregistre en
+NVS et renvoie `http://light-flash.local/` et `http://<ip>/`. Clients : appli Home Assistant,
+appli Improv, improv-wifi.com. Le portail HTTP du point d'accès de secours reste le repli.
+Branche distante `origin/feature/connect2Wifi` : intégrée et obsolète, peut être supprimée.
 
 ## Chaîne de compilation
 
@@ -162,6 +164,10 @@ Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puc
 - Noms sur le réseau : `light-flash.local` (mDNS, `EspMdns` dans `main.rs`, service `_http._tcp`)
   et `light-flash` / `light-flash.home` via le DNS de la box (nom DHCP). Vérifiés le 2026-10-04
   depuis le PC et une Livebox.
+- BLE : seul le thread `provision` touche à NimBLE ; les callbacks `on_write` ne font que
+  relayer les paquets sur un canal. Tester sans téléphone : client Python `bleak` (voir
+  `BACKLOG.md` §2.4), `rfkill unblock bluetooth` sur le PC puis `rfkill block` après, et
+  `curl -X POST http://<ip>/api/debug/improv-authorize` à la place de l'appui sur BOOT.
 - Réseau : seul le thread `network` touche au driver Wi-Fi. La logique de décision est dans
   `light_core::reconnect::Policy` (testée sur l'hôte) ; `network.rs` ne fait qu'exécuter les
   actions (`connect_sta`, `start_access_point`) et journaliser. Pour tester la reconnexion sans

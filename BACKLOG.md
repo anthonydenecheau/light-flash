@@ -207,35 +207,42 @@ bit 0 identify, bit 1 device info, bit 2 scan, bit 3 hostname, bit 4 device name
 6. Re-provisioning : appui long 5 s sur BOOT efface la NVS et redémarre ; N échecs consécutifs de
    reconnexion STA (ex. 10) rouvrent aussi la fenêtre Improv sans effacer les identifiants.
 
-**Implémentation** (crate `crates/improv`)
+**Implémentation** — fait le 2026-10-04
 
-- [ ] **P0** — Vérifier sur crates.io s'il existe une implémentation Rust réutilisable du protocole ;
-  sinon l'écrire : le parseur de paquets et la machine à états tiennent en quelques centaines de
-  lignes, **sans dépendance ESP**, donc testables sur l'hôte (§2.2).
-- [ ] **P0** — Côté BLE avec `esp32-nimble` : un service, cinq caractéristiques, `on_write` sur
-  RPC Command. Le callback ne fait que parser et pousser une `ProvisionCommand` sur un canal
-  `mpsc` ; la tentative de connexion (plusieurs secondes) tourne dans une tâche dédiée qui met à
-  jour Current State / Error State / RPC Result et notifie. Jamais de Wi-Fi bloquant dans un
-  callback NimBLE.
-- [ ] **P0** — Côté Wi-Fi : réutiliser `crates/wifi` avec `Some(nvs)` et distinguer dans l'erreur
-  retournée réseau introuvable / authentification refusée / pas de bail DHCP, pour le log et pour
-  choisir entre réessayer ou abandonner.
-- [ ] **P1** — Bouton BOOT : `PinDriver::input(gpio9)` avec pull-up, interruption ou polling
-  50 ms, anti-rebond, distinction appui court / appui long.
-- [ ] **P1** — `sdkconfig.defaults` : `CONFIG_BT_NIMBLE_NVS_PERSIST=y` (mémoriser les appairages),
-  `CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y` (BLE et Wi-Fi actifs simultanément pendant l'étape 3).
-- [ ] **P1** — Sécurité : mot de passe jamais loggé ni renvoyé ; appairage BLE LE Secure
-  Connections avec bonding (Improv ne chiffre pas au niveau applicatif, c'est l'appairage BLE qui
-  protège le canal) ; fenêtre d'autorisation courte ; advertising Improv coupé une fois provisionné.
-- [ ] **P2** — Après succès, démarrer mDNS (`light.local`, composant `espressif/mdns`, voir §3) pour
-  que l'URL renvoyée dans RPC Result soit utilisable.
+- [x] `crates/improv` : protocole (paquets RPC avec checksum, Wi-Fi settings, identify, device
+  info, résultats) et machine à états (autorisation par bouton avec expiration à 60 s,
+  provisioning, succès/échec), 15 tests hôte. Aucune crate existante sur crates.io.
+- [x] `firmware/light-flash/src/provisioning.rs` : thread propriétaire de NimBLE (`esp32-nimble`),
+  service GATT Improv (cinq caractéristiques), advertising avec *service data* `0x4677` mis à jour
+  à chaque changement d'état (nom dans la réponse de scan), bouton BOOT (appui court =
+  autorisation, appui long 5 s = réinitialisation d'usine), indications lumineuses
+  (`light_core::status`), demande de connexion au thread réseau (`NetworkHandle::connect`),
+  enregistrement NVS, URL renvoyées : `http://light-flash.local/` et `http://<ip>/`.
+- [x] `network.rs` : canal de commandes `Connect` ; en cas de succès le thread réseau adopte les
+  identifiants (`Policy::set_has_credentials`), sinon il relance le point d'accès s'il y était.
+- [x] Capacités annoncées : identify + device info (`0x03`). Scan Wi-Fi (`0x04`) non implémenté.
+- [x] Sécurité : autorisation par BOOT obligatoire (`require_authorization: true`), le mot de passe
+  n'est jamais journalisé. Pas d'appairage BLE (Improv ne le prévoit pas).
+- [x] Debug : `POST /api/debug/improv-authorize` simule l'appui sur BOOT (build debug seulement).
+- [ ] **P2 — Scan Wi-Fi** (`0x04`) pour que l'appli propose la liste des réseaux ; demande un
+  `scan()` via le thread réseau et le résultat en triplets SSID, RSSI, sécurité.
+- [ ] **P2 — Arrêter l'advertising** quelques minutes après un provisioning réussi (la spec dit
+  « the Improv service is stopped ») pour économiser la radio ; aujourd'hui il reste actif et
+  seul BOOT rouvre l'autorisation.
+- [ ] **P3 — Coexistence** : avec BLE actif, l'association Wi-Fi au boot prend parfois plus de
+  20 s au lieu de 4 ; `CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y` est déjà actif, à surveiller.
 
 **Tests**
 
-- Hôte : parseur (checksum faux, longueurs incohérentes, paquet tronqué, SSID vide) et machine à
-  états (commande hors fenêtre d'autorisation, timeout, double provisioning).
-- Carte, avec l'appli Home Assistant : scénario nominal, mauvais mot de passe, SSID inexistant,
-  timeout d'autorisation, Identify, reset usine par appui long, reboot avec identifiants en NVS.
+- [x] Hôte : parseur (checksum faux, longueurs incohérentes, paquet tronqué, SSID vide, UTF-8
+  invalide) et machine à états (commande hors fenêtre d'autorisation, expiration, échec puis
+  nouvel essai, double provisioning).
+- [x] Carte, depuis le PC avec un client Python `bleak` (2026-10-04) : découverte avec service
+  data `01 03 00 00 00 00`, device info, identify, refus sans autorisation (`0x04`), paquet
+  invalide (`0x01`), puis autorisation simulée → Wi-Fi settings → état provisioning →
+  résultat `http://light-flash.local/` + `http://192.168.1.37/` → provisionné en 6,4 s.
+- [ ] Carte, avec l'appli Home Assistant ou Improv sur téléphone : scénario nominal avec appui
+  réel sur BOOT, mauvais mot de passe, réinitialisation d'usine par appui long.
 
 ---
 
@@ -360,10 +367,14 @@ intégration dans `master` sous `crates/http-server` et `crates/wifi`. La branch
 - [x] **Démarrage Wi-Fi** : le `scan()` avant `connect()` a été supprimé (2026-10-04).
 - [x] **Driver LED** : impulsions calculées une fois dans `new()`, `1 << i`, `counter_clock()`
   lu une fois (2026-10-04).
-- [ ] **P1 — Coexistence BLE / Wi-Fi** : si les deux radios tournent, activer la coexistence
-  logicielle (`CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y`, vérifier le nom exact dans `menuconfig` pour
-  la v5.3.2) et surveiller le heap libre (`esp_idf_svc::sys::esp_get_free_heap_size()`) dans un log
-  périodique en debug.
+- [x] **Coexistence BLE / Wi-Fi** : `CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y` est actif par défaut
+  (vérifié dans le sdkconfig généré) ; le tas libre est journalisé chaque minute.
+- [ ] **P1 — Mémoire avec BLE actif** : 40 Ko de tas libre le 2026-10-04 avec NimBLE par défaut
+  (173 Ko sans BLE). Première passe de réduction dans `sdkconfig.defaults` (une connexion, rôles
+  central/observateur coupés, tampons NimBLE et Wi-Fi réduits, pile principale 12 Ko) : 58 Ko
+  libres après 60 s, BLE et Wi-Fi vérifiés. Pistes suivantes : couper le BLE quelques minutes après un provisioning
+  réussi (`BLEDevice::deinit`) et le rallumer sur appui BOOT ; réduire les piles des threads
+  (`provision` 16 Ko, `network` 12 Ko) après mesure du pic d'utilisation.
 - [x] **Usure de la flash** : écriture différée de 2 s et seulement si l'état change
   (`SaveScheduler`, 2026-10-04).
 - [ ] **P2 — Rendu couleur** : appliquer une correction gamma (table 256 entrées) avant envoi aux
@@ -421,16 +432,20 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
 ### 5.3 Table de partitions et OTA
 
 - [ ] **P1 — `partitions.csv` avec deux slots OTA** (flash 4 Mo). Par défaut `espflash` utilise une
-  seule partition `factory` : impossible de mettre à jour sans câble.
+  seule partition `factory` : impossible de mettre à jour sans câble. Attention : avec BLE,
+  Wi-Fi, HTTP et mDNS, l'application fait 1,75 Mo en debug (2026-10-04) ; mesurer la taille en
+  release avant de fixer la taille des slots (1,5 Mo chacun ne suffirait pas en debug).
   ```csv
   # Name,    Type, SubType,  Offset,   Size
   nvs,       data, nvs,      0x9000,   0x6000
   otadata,   data, ota,      0xf000,   0x2000
   phy_init,  data, phy,      0x11000,  0x1000
-  ota_0,     app,  ota_0,    0x20000,  0x180000
-  ota_1,     app,  ota_1,    0x1A0000, 0x180000
-  storage,   data, spiffs,   0x320000, 0xE0000
+  ota_0,     app,  ota_0,    0x20000,  0x1C0000
+  ota_1,     app,  ota_1,    0x1E0000, 0x1C0000
+  storage,   data, spiffs,   0x3A0000, 0x60000
   ```
+  Slots de 1,75 Mo : l'image release fait 1,51 Mo le 2026-10-04 (BLE + Wi-Fi + HTTP + mDNS), la
+  debug 1,75 Mo ; l'OTA se fera en release.
 - [ ] **P2 — OTA par HTTP** avec `esp_idf_svc::ota::EspOta` : la lampe télécharge l'image depuis
   une URL fournie (serveur local pendant le dev), écrit dans le slot inactif, redémarre, confirme
   (`mark_running_slot_valid`) après un boot sain, sinon rollback automatique
@@ -444,10 +459,10 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
   `cfg.toml` ne sert plus que d'identifiants de secours et de mot de passe du point d'accès.
 - [x] **Stockage NVS du dernier état de la lampe** (2026-10-04, voir §2.2).
 - [x] **Séquence de boot** (2026-10-04) : NVS → sinon `cfg.toml` → station, reconnexion
-  automatique et repli point d'accès gérés par le thread réseau (§3, `wifi`). Reste : mode
-  provisioning Improv (§2.4) et signalisation par LED.
-- [ ] **P2 — Reset usine** : appui long 5 s sur BOOT (GPIO9) efface la NVS et redémarre (§2.4,
-  étape 6).
+  automatique et repli point d'accès gérés par le thread réseau ; Improv BLE actif en permanence,
+  autorisation par BOOT ; signalisation par la lampe (`light_core::status`).
+- [x] **Reset usine** : appui long 5 s sur BOOT (GPIO9) efface identifiants et état, puis
+  redémarre (2026-10-04, `provisioning.rs`).
 - [ ] **P1 — Accès à la page depuis le téléphone sur le réseau domestique** (question du
   2026-10-04). Aujourd'hui l'adresse n'est visible que dans le journal série. Options, par ordre
   de recommandation :
@@ -459,9 +474,8 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
      résout `light-flash` et `light-flash.home` vers la lampe, vérifié avec `dig`.
   3. [x] **Réservation DHCP dans la box** : documentée dans le README (section « Accéder à la
      lampe »), avec la méthode Livebox.
-  4. **Improv (§2.4)** : à la fin du provisioning, la lampe renvoie l'URL à ouvrir, l'appli du
-     téléphone l'ouvre directement. Le portail HTTP de secours ne le permet pas (le téléphone
-     quitte le point d'accès au redémarrage).
+  4. [x] **Improv (§2.4, fait le 2026-10-04)** : à la fin du provisioning, la lampe renvoie
+     `http://light-flash.local/` et `http://<ip>/`, l'appli du téléphone les ouvre directement.
   5. **Page installable (PWA)** : manifeste + icône pour un raccourci « application » sur le
      téléphone ; ne résout pas l'adresse, à combiner avec 1 à 3.
   6. [x] **Domotique et accès distant** : documentés dans le README (Home Assistant via mDNS,

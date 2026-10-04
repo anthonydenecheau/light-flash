@@ -41,10 +41,21 @@ make run   CRATE=hardware-check   # test de la carte (nécessite cfg.toml)
 make test                         # tests hôte de light-core
 ```
 
-Au premier démarrage, la lampe ouvre le point d'accès Wi-Fi `light-flash` (mot de passe
-`light-flash`, modifiable dans `cfg.toml`). S'y connecter et ouvrir http://192.168.71.1/ : la page
-permet d'allumer, choisir couleur, luminosité et effet, et d'enregistrer le réseau Wi-Fi de la
-maison. La lampe redémarre alors sur ce réseau.
+## Première configuration du Wi-Fi
+
+Deux méthodes, au choix :
+
+- **Par Bluetooth (Improv Wi-Fi), recommandée** : ouvrir l'application Home Assistant, l'application
+  Improv Wi-Fi (Android) ou https://www.improv-wifi.com/ dans Chrome ; la lampe apparaît sous le nom
+  `light-flash`. Appuyer brièvement sur le bouton BOOT de la carte (la lampe respire en bleu pendant
+  60 s), saisir le réseau et le mot de passe : la lampe clignote en bleu, puis passe au vert et
+  l'application ouvre sa page. Rouge : mot de passe ou réseau incorrect, réessayer.
+- **Par le point d'accès de secours** : sans Wi-Fi configuré, la lampe ouvre le réseau `light-flash`
+  (mot de passe `light-flash`, modifiable dans `cfg.toml`). S'y connecter, ouvrir
+  http://192.168.71.1/ et renseigner le réseau de la maison dans le formulaire ; la lampe redémarre
+  sur ce réseau.
+
+Un appui long (5 s) sur BOOT efface le Wi-Fi et l'état enregistrés, puis redémarre.
 
 ## Accéder à la lampe sur le réseau de la maison
 

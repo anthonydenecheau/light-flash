@@ -17,6 +17,8 @@ rgb-led.workspace = true
 wifi.workspace = true
 storage.workspace = true
 http-server.workspace = true
+improv.workspace = true
+esp32-nimble.workspace = true
 toml-cfg.workspace = true
 
 [build-dependencies]

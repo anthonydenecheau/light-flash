@@ -31,6 +31,8 @@ pub struct DebugHooks {
     /// `POST /api/debug/wifi-disconnect` : force une déconnexion de la station pour tester la
     /// reconnexion automatique.
     pub wifi_disconnect: Box<dyn Fn() + Send + Sync + 'static>,
+    /// `POST /api/debug/improv-authorize` : simule un appui court sur BOOT (autorisation Improv).
+    pub improv_authorize: Box<dyn Fn() + Send + Sync + 'static>,
 }
 
 #[derive(Deserialize)]
@@ -122,12 +124,25 @@ pub fn start(
     })?;
 
     if let Some(hooks) = debug {
+        let DebugHooks {
+            wifi_disconnect,
+            improv_authorize,
+        } = hooks;
         server.fn_handler::<anyhow::Error, _>(
             "/api/debug/wifi-disconnect",
             Method::Post,
             move |req| {
                 warn!("debug : déconnexion Wi-Fi forcée");
-                (hooks.wifi_disconnect)();
+                wifi_disconnect();
+                write_json(req, 200, br#"{"ok":true}"#)
+            },
+        )?;
+        server.fn_handler::<anyhow::Error, _>(
+            "/api/debug/improv-authorize",
+            Method::Post,
+            move |req| {
+                warn!("debug : autorisation Improv simulée (appui sur BOOT)");
+                improv_authorize();
                 write_json(req, 200, br#"{"ok":true}"#)
             },
         )?;

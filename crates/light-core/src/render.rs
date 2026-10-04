@@ -75,7 +75,7 @@ impl Default for Renderer {
 }
 
 /// Onde triangulaire 0..=255 de période `period_ms`.
-fn triangle(t_ms: u32, period_ms: u32) -> u8 {
+pub fn triangle(t_ms: u32, period_ms: u32) -> u8 {
     let half = period_ms / 2;
     let t = t_ms % period_ms;
     let up = if t < half { t } else { period_ms - t };

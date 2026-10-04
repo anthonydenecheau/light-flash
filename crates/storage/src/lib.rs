@@ -103,4 +103,12 @@ impl Storage {
         self.nvs.set_raw(KEY_STATE, &state.to_bytes())?;
         Ok(())
     }
+
+    /// Réinitialisation d'usine : identifiants Wi-Fi et état de la lampe effacés.
+    pub fn factory_reset(&mut self) -> Result<()> {
+        self.clear_wifi_credentials()?;
+        self.nvs.remove(KEY_STATE)?;
+        log::warn!("NVS effacée : réinitialisation d'usine");
+        Ok(())
+    }
 }

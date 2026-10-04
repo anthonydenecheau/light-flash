@@ -1,7 +1,8 @@
 # Configuration ESP-IDF commune à tout le workspace.
 # Toute modification déclenche une recompilation complète d'ESP-IDF.
 
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=20000
+# La tâche principale ne fait que l'initialisation puis un journal périodique.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=12288
 CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=4096
 
 # Nom envoyé à la box par DHCP (option 12) : http://light-flash/ sur beaucoup de box.
@@ -19,3 +20,17 @@ CONFIG_BT_ENABLED=y
 CONFIG_BT_BLE_ENABLED=y
 CONFIG_BT_BLUEDROID_ENABLED=n
 CONFIG_BT_NIMBLE_ENABLED=y
+# La lampe n'est que périphérique (Improv) : une connexion, pas de rôle central ni observateur,
+# tampons réduits. Le tas libre était tombé à 40 Ko avec la configuration par défaut.
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+CONFIG_BT_NIMBLE_MAX_BONDS=1
+CONFIG_BT_NIMBLE_MAX_CCCDS=4
+CONFIG_BT_NIMBLE_ACL_BUF_COUNT=12
+CONFIG_BT_NIMBLE_HCI_EVT_HI_BUF_COUNT=10
+
+# Wi-Fi : tampons réduits (une page HTML et quelques requêtes JSON, pas de gros débit).
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=16

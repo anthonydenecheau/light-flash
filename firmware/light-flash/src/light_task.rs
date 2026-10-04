@@ -1,7 +1,7 @@
 //! Tâche lumière : boucle de rendu à cadence fixe, seule à parler au driver LED.
 
 use anyhow::Result;
-use light_core::{power, Renderer, SharedState, RGB8};
+use light_core::{power, status, Renderer, SharedIndication, SharedState, RGB8};
 use log::{error, info};
 use rgb_led::WS2812RMT;
 use std::{
@@ -19,15 +19,19 @@ const FRAME: Duration = Duration::from_millis(20);
 /// Pile du thread : rendu d'une trame + driver RMT.
 const STACK_SIZE: usize = 8 * 1024;
 
-pub fn spawn(led: WS2812RMT<'static>, shared: SharedState) -> Result<()> {
+pub fn spawn(
+    led: WS2812RMT<'static>,
+    shared: SharedState,
+    indication: SharedIndication,
+) -> Result<()> {
     thread::Builder::new()
         .name("light".into())
         .stack_size(STACK_SIZE)
-        .spawn(move || run(led, shared))?;
+        .spawn(move || run(led, shared, indication))?;
     Ok(())
 }
 
-fn run(mut led: WS2812RMT<'static>, shared: SharedState) {
+fn run(mut led: WS2812RMT<'static>, shared: SharedState, indication: SharedIndication) {
     let mut renderer = Renderer::default();
     let mut frame = vec![RGB8::default(); LED_COUNT];
     let mut last_sent: Option<Vec<RGB8>> = None;
@@ -40,11 +44,17 @@ fn run(mut led: WS2812RMT<'static>, shared: SharedState) {
         renderer.tick(now.duration_since(last_tick).as_millis() as u32);
         last_tick = now;
 
-        // Copie de l'état : le verrou n'est jamais tenu pendant l'accès au driver.
+        // Copies de l'état et de l'indication : aucun verrou tenu pendant l'accès au driver.
         let state = *shared
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        renderer.render(&state, &mut frame);
+        let indication = *indication
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match indication {
+            Some(indication) => status::render(indication, renderer.clock_ms(), &mut frame),
+            None => renderer.render(&state, &mut frame),
+        }
 
         let estimated = power::estimate_ma(&frame);
         let sent = power::limit(&mut frame, MAX_MILLIAMPS);

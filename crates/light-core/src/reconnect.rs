@@ -71,6 +71,11 @@ impl Policy {
         self.mode
     }
 
+    /// Des identifiants viennent d'être obtenus (ou retirés) : active ou coupe les essais station.
+    pub fn set_has_credentials(&mut self, has_credentials: bool) {
+        self.has_credentials = has_credentials;
+    }
+
     /// À appeler régulièrement. `connected` : la station a une association (ignoré en mode
     /// point d'accès).
     pub fn on_tick(&mut self, now_ms: u64, connected: bool) -> Action {
@@ -237,6 +242,27 @@ mod tests {
         assert_eq!(p.on_station_result(300_000, false), Action::Wait);
         assert_eq!(p.on_tick(301_000, false), Action::Wait);
         assert_eq!(p.on_tick(302_000, false), Action::ConnectStation);
+    }
+
+    #[test]
+    fn credentials_obtained_while_in_access_point_mode_switch_to_station() {
+        let mut p = Policy::new(false, S);
+        assert_eq!(p.on_tick(0, false), Action::StartAccessPoint);
+        // Provisioning : le firmware tente la station lui-même, puis informe la politique.
+        p.set_has_credentials(true);
+        assert_eq!(p.on_station_result(30_000, true), Action::Wait);
+        assert_eq!(p.mode(), Mode::Station);
+        assert_eq!(p.on_tick(31_000, true), Action::Wait);
+        assert_eq!(p.on_tick(60_000, false), Action::ConnectStation);
+    }
+
+    #[test]
+    fn failed_provisioning_attempt_from_access_point_restarts_it() {
+        let mut p = Policy::new(false, S);
+        p.on_tick(0, false);
+        assert_eq!(p.on_station_result(20_000, false), Action::StartAccessPoint);
+        assert_eq!(p.mode(), Mode::AccessPoint);
+        assert_eq!(p.on_tick(21_000, false), Action::Wait);
     }
 
     #[test]

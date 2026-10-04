@@ -4,18 +4,22 @@
 use anyhow::Result;
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
-    hal::{peripherals::Peripherals, reset},
+    hal::{
+        gpio::{PinDriver, Pull},
+        peripherals::Peripherals,
+        reset,
+    },
     log::EspLogger,
     mdns::EspMdns,
     nvs::EspDefaultNvsPartition,
     sys,
 };
 use http_server::DebugHooks;
-use light_core::{LightState, SharedState};
+use light_core::{LightState, SharedIndication, SharedState};
 use log::info;
 use rgb_led::WS2812RMT;
 use std::{
-    sync::{Arc, Mutex},
+    sync::{atomic::Ordering, Arc, Mutex},
     thread,
     time::Duration,
 };
@@ -25,6 +29,7 @@ use wifi::AccessPoint;
 mod light_task;
 mod network;
 mod persistence;
+mod provisioning;
 
 /// Identifiants de secours compilés depuis `cfg.toml` (section `[light-flash]`),
 /// utilisés quand la NVS ne contient rien. Voir `cfg.toml.example`.
@@ -70,10 +75,12 @@ fn main() -> Result<()> {
         }
     };
     let shared: SharedState = Arc::new(Mutex::new(initial));
+    // Indication système (provisioning, identification) qui remplace temporairement le rendu.
+    let indication: SharedIndication = Arc::new(Mutex::new(None));
 
     // Tâche lumière : seule propriétaire du driver LED.
     let led = WS2812RMT::new(peripherals.pins.gpio2, peripherals.rmt.channel0)?;
-    light_task::spawn(led, shared.clone())?;
+    light_task::spawn(led, shared.clone(), indication.clone())?;
     // Persistance de l'état après 2 s de calme.
     persistence::spawn(shared.clone(), storage.clone(), saved)?;
 
@@ -112,6 +119,22 @@ fn main() -> Result<()> {
     mdns.add_service(None, "_http", "_tcp", 80, &[("path", "/")])?;
     info!("mDNS : http://{DEVICE_NAME}.local/");
 
+    // Provisioning Improv sur BLE : bouton BOOT (GPIO9, pull-up externe) pour autoriser.
+    let mut button = PinDriver::input(peripherals.pins.gpio9)?;
+    button.set_pull(Pull::Up)?;
+    let provisioning = provisioning::spawn(
+        button,
+        storage.clone(),
+        network.clone(),
+        indication,
+        provisioning::Config {
+            device_name: DEVICE_NAME,
+            hardware: "ESP32-C3-DevKit-RUST-1",
+            version: env!("CARGO_PKG_VERSION"),
+            require_authorization: true,
+        },
+    )?;
+
     // Serveur HTTP : page de pilotage, API JSON, réception des identifiants Wi-Fi.
     // Démarré avant que le réseau soit prêt : le socket d'écoute survit aux reconnexions.
     let on_wifi_credentials = {
@@ -123,8 +146,13 @@ fn main() -> Result<()> {
             Ok(())
         })
     };
-    let debug_hooks = cfg!(debug_assertions).then(|| DebugHooks {
-        wifi_disconnect: Box::new(move || network.request_disconnect()),
+    let debug_hooks = cfg!(debug_assertions).then(|| {
+        let disconnect = network.disconnect_flag();
+        let authorize = provisioning.authorize_flag();
+        DebugHooks {
+            wifi_disconnect: Box::new(move || disconnect.store(true, Ordering::Relaxed)),
+            improv_authorize: Box::new(move || authorize.store(true, Ordering::Relaxed)),
+        }
     });
     let _server = http_server::start(shared, on_wifi_credentials, debug_hooks)?;
     let _mdns = mdns;
