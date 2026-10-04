@@ -8,6 +8,7 @@ members = [
     "crates/wifi",
     "crates/storage",
     "crates/http-server",
+    "crates/improv",
 ]
 
 [workspace.package]
@@ -38,6 +39,7 @@ rgb-led     = { path = "crates/rgb-led" }
 wifi        = { path = "crates/wifi" }
 storage     = { path = "crates/storage" }
 http-server = { path = "crates/http-server" }
+improv      = { path = "crates/improv" }
 
 # Les profils ne sont pris en compte qu'à la racine du workspace.
 [profile.release]

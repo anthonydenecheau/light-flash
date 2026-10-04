@@ -177,28 +177,31 @@ ci-dessous.
 | Caractéristique | UUID (suffixe) | Propriétés | Contenu |
 |---|---|---|---|
 | Capabilities | `…8005` | READ | bit 0 = commande « Identify » supportée |
-| Current State | `…8001` | READ, NOTIFY | `0x02` autorisation requise, `0x03` autorisé, `0x04` connexion en cours, `0x05` provisionné |
-| Error State | `…8002` | READ, NOTIFY | `0x00` aucun, `0x01` paquet RPC invalide, `0x02` commande inconnue, `0x03` connexion impossible, `0x04` non autorisé, `0xFF` inconnu |
+| Current State | `…8001` | READ, NOTIFY | `0x01` autorisation requise, `0x02` autorisé, `0x03` connexion en cours, `0x04` provisionné (valeurs vérifiées sur la spec le 2026-10-04) |
+| Error State | `…8002` | READ, NOTIFY | `0x00` aucun, `0x01` paquet RPC invalide, `0x02` commande inconnue, `0x03` connexion impossible, `0x04` non autorisé, `0x05` nom d'hôte invalide, `0xFF` inconnu |
 | RPC Command | `…8003` | WRITE | `[cmd][len][data…][checksum]`, checksum = somme des octets précédents modulo 256 |
-| RPC Result | `…8004` | READ, NOTIFY | `[cmd][len][chaînes préfixées par leur longueur]` ; pour `0x01`, une URL à ouvrir (peut être vide) |
+| RPC Result | `…8004` | READ, NOTIFY | `[cmd][len][chaînes préfixées par leur longueur][checksum]` ; pour `0x01`, une URL à ouvrir (peut être vide) |
 
 L'advertising porte le nom de l'appareil, l'UUID du service, et un *service data* sur l'UUID 16 bits
 `0x4677` contenant `[état courant][capabilities][4 octets réservés]`, ce qui permet aux applis
 d'afficher l'état avant de se connecter.
 
 Commandes RPC : `0x01` Send Wi-Fi settings, data = `[len ssid][ssid][len psk][psk]` ;
-`0x02` Identify, sans data (faire clignoter la lampe pour la reconnaître parmi plusieurs).
+`0x02` Identify, sans data (faire clignoter la lampe pour la reconnaître parmi plusieurs) ;
+`0x03` Device info (réponse : firmware, version, matériel, nom) ; `0x04` Scan Wi-Fi (réponse :
+triplets SSID, RSSI, sécurité) ; `0x05`/`0x06` nom d'hôte / nom d'appareil. Capabilities :
+bit 0 identify, bit 1 device info, bit 2 scan, bit 3 hostname, bit 4 device name.
 
 **Séquence cible**
 
-1. Boot sans identifiants en NVS → advertising `light-flash`, état `0x02`, LED bleue clignotante.
-2. Appui court sur BOOT (GPIO9) → état `0x03`, LED bleue fixe ; retour à `0x02` après 60 s sans
-   commande. Toute commande `0x01` reçue en état `0x02` est refusée avec Error State `0x04`.
+1. Boot sans identifiants en NVS → advertising `light-flash`, état `0x01`, LED bleue clignotante.
+2. Appui court sur BOOT (GPIO9) → état `0x02`, LED bleue fixe ; retour à `0x01` après 60 s sans
+   commande. Toute commande `0x01` reçue en état `0x01` est refusée avec Error State `0x04`.
 3. Réception `0x01` → vérification du checksum et des longueurs (SSID ≤ 32, PSK ≤ 64) → état
-   `0x04` → tentative STA avec timeout de 15 s.
-4. Succès : écriture SSID/PSK en NVS, état `0x05`, RPC Result avec `http://light.local/` (ou l'IP),
-   LED verte 2 s puis retour à l'état lampe. Échec : Error State `0x03`, retour à `0x03`, LED rouge
-   2 s puis bleue fixe ; rien n'est écrit en NVS.
+   `0x03` → tentative STA avec timeout de 15 s.
+4. Succès : écriture SSID/PSK en NVS, état `0x04`, RPC Result avec `http://light-flash.local/`
+   et l'adresse IP, LED verte 2 s puis retour à l'état lampe. Échec : Error State `0x03`, retour à
+   `0x02`, LED rouge 2 s puis bleue fixe ; rien n'est écrit en NVS.
 5. Après provisioning, l'advertising Improv s'arrête ; le service « light » (§2.2) reste disponible
    en BLE pour le pilotage.
 6. Re-provisioning : appui long 5 s sur BOOT efface la NVS et redémarre ; N échecs consécutifs de
@@ -448,22 +451,21 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
 - [ ] **P1 — Accès à la page depuis le téléphone sur le réseau domestique** (question du
   2026-10-04). Aujourd'hui l'adresse n'est visible que dans le journal série. Options, par ordre
   de recommandation :
-  1. **mDNS + DNS-SD** : `http://light-flash.local/` et annonce `_http._tcp` (composant
-     `espressif/mdns` à ajouter via `[workspace.metadata.esp-idf-sys]`, puis
-     `esp_idf_svc::mdns::EspMdns`). Natif sur iPhone, Mac, Windows 10+, Linux ; inégal sur
-     Android selon la version et le navigateur. Rend aussi la lampe découvrable par Home Assistant.
-  2. **Nom DHCP `light-flash`** (hostname de l'interface station) : beaucoup de box, dont la
-     Livebox, résolvent alors `http://light-flash/` sur le réseau local. Gratuit, à faire avec 1.
-  3. **Réservation DHCP dans la box** : adresse fixe, favori ou raccourci sur l'écran d'accueil.
-     Solution de secours universelle, surtout pour Android ; à documenter dans le README.
+  1. [x] **mDNS + DNS-SD** (fait le 2026-10-04) : `http://light-flash.local/` et annonce
+     `_http._tcp` (composant `espressif/mdns` déclaré dans `firmware/light-flash/Cargo.toml`,
+     `ESP_IDF_SYS_ROOT_CRATE` dans `.cargo/config.toml`, `EspMdns` dans `main.rs`). Vérifié depuis
+     le PC. Natif sur iPhone, Mac, Windows 10+, Linux ; inégal sur Android.
+  2. [x] **Nom DHCP `light-flash`** (fait le 2026-10-04, `CONFIG_LWIP_LOCAL_HOSTNAME`) : la Livebox
+     résout `light-flash` et `light-flash.home` vers la lampe, vérifié avec `dig`.
+  3. [x] **Réservation DHCP dans la box** : documentée dans le README (section « Accéder à la
+     lampe »), avec la méthode Livebox.
   4. **Improv (§2.4)** : à la fin du provisioning, la lampe renvoie l'URL à ouvrir, l'appli du
      téléphone l'ouvre directement. Le portail HTTP de secours ne le permet pas (le téléphone
      quitte le point d'accès au redémarrage).
   5. **Page installable (PWA)** : manifeste + icône pour un raccourci « application » sur le
      téléphone ; ne résout pas l'adresse, à combiner avec 1 à 3.
-  6. **Domotique** : Home Assistant via découverte mDNS ou MQTT, pilotage depuis son appli, y
-     compris hors de la maison. Hors de la maison sans domotique : VPN (Tailscale est déjà sur
-     le PC) ; jamais d'ouverture de port vers la lampe, elle n'a pas d'authentification.
+  6. [x] **Domotique et accès distant** : documentés dans le README (Home Assistant via mDNS,
+     VPN ; jamais d'ouverture de port). L'intégration Home Assistant elle-même reste à faire (§7).
 
 ### 5.5 Devcontainer
 
