@@ -73,8 +73,12 @@ le repli.
   Exception connue : `ignore` est épinglé à 0.4.23 (0.4.30 utilise des let-chains sans déclarer
   sa `rust-version`) ; après un `cargo update`, vérifier qu'il n'est pas remonté.
 - Un seul `sdkconfig.defaults` pour le workspace (esp-idf-sys n'est construit qu'une fois) ; il
-  active NimBLE pour tous les binaires. Toute modification déclenche une recompilation complète
-  d'ESP-IDF (long).
+  active NimBLE pour tous les binaires et fixe le nom DHCP (`CONFIG_LWIP_LOCAL_HOSTNAME`). Toute
+  modification déclenche une recompilation d'ESP-IDF.
+- Composants ESP-IDF supplémentaires (registre Espressif, ex. `espressif/mdns`) : déclarés dans
+  `firmware/light-flash/Cargo.toml` sous `[[package.metadata.esp-idf-sys.extra_components]]`,
+  que esp-idf-sys lit grâce à `ESP_IDF_SYS_ROOT_CRATE = "light-flash"` dans `.cargo/config.toml`
+  (workspace virtuel). Même effet : recompilation d'ESP-IDF.
 - `esp-idf-hal` et `esp-idf-svc` relaient l'environnement ESP-IDF via `links` : une crate n'a pas
   besoin de dépendre directement d'`esp-idf-sys`, mais chaque crate qui produit un binaire ou un
   exemple garde un `build.rs` appelant `embuild::espidf::sysenv::output()`.
@@ -155,6 +159,9 @@ Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puc
   l'état diffère de l'enregistré) ; ne jamais écrire en NVS depuis un handler HTTP ou la tâche
   lumière. Changer le format de `LightState::to_bytes` impose d'incrémenter `FORMAT_VERSION`
   (un ancien blob est alors ignoré, pas migré).
+- Noms sur le réseau : `light-flash.local` (mDNS, `EspMdns` dans `main.rs`, service `_http._tcp`)
+  et `light-flash` / `light-flash.home` via le DNS de la box (nom DHCP). Vérifiés le 2026-10-04
+  depuis le PC et une Livebox.
 - Réseau : seul le thread `network` touche au driver Wi-Fi. La logique de décision est dans
   `light_core::reconnect::Policy` (testée sur l'hôte) ; `network.rs` ne fait qu'exécuter les
   actions (`connect_sta`, `start_access_point`) et journaliser. Pour tester la reconnexion sans

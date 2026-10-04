@@ -18,6 +18,9 @@ build-std = ["std", "panic_abort"]
 
 [env]
 MCU = "esp32c3"
+# Workspace virtuel : esp-idf-sys lit ses métadonnées ([package.metadata.esp-idf-sys], composants
+# supplémentaires comme mDNS) dans la crate désignée ici.
+ESP_IDF_SYS_ROOT_CRATE = "light-flash"
 # Version d'ESP-IDF construite nativement par esp-idf-sys.
 ESP_IDF_VERSION = { value = "tag:v5.3.2" }
 # Configuration ESP-IDF commune à tout le workspace (un seul build d'esp-idf-sys).

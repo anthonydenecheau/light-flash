@@ -4,6 +4,9 @@
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=20000
 CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=4096
 
+# Nom envoyé à la box par DHCP (option 12) : http://light-flash/ sur beaucoup de box.
+CONFIG_LWIP_LOCAL_HOSTNAME="light-flash"
+
 # Tick FreeRTOS à 1000 Hz (100 Hz par défaut) pour des sleeps à la ms.
 #CONFIG_FREERTOS_HZ=1000
 

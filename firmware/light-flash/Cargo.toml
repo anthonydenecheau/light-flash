@@ -21,3 +21,8 @@ toml-cfg.workspace = true
 
 [build-dependencies]
 embuild.workspace = true
+
+# Composants ESP-IDF supplémentaires (registre de composants Espressif). mDNS n'est plus livré
+# avec ESP-IDF 5.x. Toute modification ici reconstruit ESP-IDF.
+[[package.metadata.esp-idf-sys.extra_components]]
+remote_component = { name = "espressif/mdns", version = "1.2" }

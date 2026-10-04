@@ -44,7 +44,33 @@ make test                         # tests hôte de light-core
 Au premier démarrage, la lampe ouvre le point d'accès Wi-Fi `light-flash` (mot de passe
 `light-flash`, modifiable dans `cfg.toml`). S'y connecter et ouvrir http://192.168.71.1/ : la page
 permet d'allumer, choisir couleur, luminosité et effet, et d'enregistrer le réseau Wi-Fi de la
-maison. La lampe redémarre alors sur ce réseau ; son adresse s'affiche dans le moniteur série.
+maison. La lampe redémarre alors sur ce réseau.
+
+## Accéder à la lampe sur le réseau de la maison
+
+Une fois la lampe sur votre Wi-Fi, trois façons d'ouvrir sa page depuis un téléphone ou un
+ordinateur du même réseau, de la plus simple à la plus sûre :
+
+1. **http://light-flash.local/** : la lampe s'annonce en mDNS. Fonctionne nativement sur iPhone,
+   iPad, Mac, Windows 10 et plus, Linux. Sur Android, cela dépend de la version et du navigateur ;
+   si l'adresse ne répond pas, passer au point 2 ou 3.
+2. **http://light-flash/** : la lampe se présente à la box sous le nom `light-flash`. Beaucoup de
+   box résolvent ce nom sur le réseau local ; vérifié sur Livebox, qui répond aussi à
+   `light-flash.home`. Essayer `light-flash.lan` sur d'autres box.
+3. **Adresse fixe** : dans l'interface de la box (Livebox : « Réseau », « DHCP », « Baux
+   statiques » ; autres box : « réservation DHCP » ou « bail statique »), associer l'adresse MAC
+   de la lampe à une adresse fixe, par exemple 192.168.1.50. L'adresse MAC et l'adresse courante
+   s'affichent au démarrage dans `make monitor SECS=20`. Ouvrir ensuite `http://192.168.1.50/` et
+   l'ajouter à l'écran d'accueil du téléphone (« Ajouter à l'écran d'accueil » dans le navigateur).
+   C'est la méthode qui marche partout, Android compris.
+
+Hors de la maison, ne jamais ouvrir de port vers la lampe sur la box : sa page n'a pas de mot de
+passe. Deux options saines :
+
+- **Domotique** : Home Assistant découvre la lampe (mDNS) et la pilote depuis son application,
+  y compris à distance via Nabu Casa ou le VPN de Home Assistant. Intégration prévue au backlog.
+- **VPN vers la maison** : Tailscale, WireGuard ou le VPN de la box ; une fois connecté, les
+  adresses ci-dessus fonctionnent comme à la maison.
 
 La première compilation télécharge et construit ESP-IDF (plusieurs minutes, environ 2 Go dans
 `~/.espressif`).

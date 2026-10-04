@@ -6,6 +6,7 @@ use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
     hal::{peripherals::Peripherals, reset},
     log::EspLogger,
+    mdns::EspMdns,
     nvs::EspDefaultNvsPartition,
     sys,
 };
@@ -37,8 +38,10 @@ pub struct Config {
     ap_password: &'static str,
 }
 
-/// Nom du point d'accès de secours.
-const AP_SSID: &str = "light-flash";
+/// Nom du point d'accès de secours, nom d'hôte mDNS (`light-flash.local`) et nom DHCP
+/// (`CONFIG_LWIP_LOCAL_HOSTNAME` dans `sdkconfig.defaults`).
+const DEVICE_NAME: &str = "light-flash";
+const AP_SSID: &str = DEVICE_NAME;
 
 fn main() -> Result<()> {
     sys::link_patches();
@@ -101,6 +104,14 @@ fn main() -> Result<()> {
     };
     let network = network::spawn(esp_wifi, sysloop, credentials, access_point)?;
 
+    // mDNS : http://light-flash.local/ et annonce du service HTTP (découverte par Home Assistant,
+    // navigateurs Bonjour). Répond sur l'interface station comme sur le point d'accès.
+    let mut mdns = EspMdns::take()?;
+    mdns.set_hostname(DEVICE_NAME)?;
+    mdns.set_instance_name(DEVICE_NAME)?;
+    mdns.add_service(None, "_http", "_tcp", 80, &[("path", "/")])?;
+    info!("mDNS : http://{DEVICE_NAME}.local/");
+
     // Serveur HTTP : page de pilotage, API JSON, réception des identifiants Wi-Fi.
     // Démarré avant que le réseau soit prêt : le socket d'écoute survit aux reconnexions.
     let on_wifi_credentials = {
@@ -116,6 +127,7 @@ fn main() -> Result<()> {
         wifi_disconnect: Box::new(move || network.request_disconnect()),
     });
     let _server = http_server::start(shared, on_wifi_credentials, debug_hooks)?;
+    let _mdns = mdns;
 
     loop {
         thread::sleep(Duration::from_secs(60));
