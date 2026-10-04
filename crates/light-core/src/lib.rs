@@ -14,6 +14,7 @@
 pub mod api;
 pub mod button;
 pub mod color;
+pub mod naming;
 pub mod persist;
 pub mod power;
 pub mod reconnect;

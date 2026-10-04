@@ -4,6 +4,7 @@ use anyhow::{anyhow, bail, Result};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
     hal::{modem::Modem, peripheral::Peripheral},
+    handle::RawHandle,
     ipv4::IpInfo,
     nvs::EspDefaultNvsPartition,
     wifi::{
@@ -77,13 +78,24 @@ impl Default for AccessPoint<'_> {
 }
 
 /// Crée le driver Wi-Fi sans le démarrer. Passer la partition NVS permet à ESP-IDF
-/// de conserver la calibration RF entre deux démarrages.
+/// de conserver la calibration RF entre deux démarrages. `hostname` est le nom annoncé à la box
+/// par DHCP (sinon `CONFIG_LWIP_LOCAL_HOSTNAME`).
 pub fn new_wifi(
     modem: impl Peripheral<P = Modem> + 'static,
     sysloop: EspSystemEventLoop,
     nvs: Option<EspDefaultNvsPartition>,
+    hostname: &str,
 ) -> Result<EspWifi<'static>> {
-    Ok(EspWifi::new(modem, sysloop, nvs)?)
+    let wifi = EspWifi::new(modem, sysloop, nvs)?;
+    let name = std::ffi::CString::new(hostname).map_err(|_| anyhow!("nom d'hôte invalide"))?;
+    for netif in [wifi.sta_netif(), wifi.ap_netif()] {
+        // SAFETY: handle de netif valide tant que `wifi` vit ; la chaîne est copiée par ESP-IDF.
+        let rc = unsafe { esp_idf_svc::sys::esp_netif_set_hostname(netif.handle(), name.as_ptr()) };
+        if rc != esp_idf_svc::sys::ESP_OK {
+            warn!("nom d'hôte DHCP non appliqué (code {rc})");
+        }
+    }
+    Ok(wifi)
 }
 
 /// Se connecte en station et attend un bail DHCP. esp-idf-svc borne la connexion à 15 s ;
@@ -186,7 +198,7 @@ pub fn wifi(
     modem: impl Peripheral<P = Modem> + 'static,
     sysloop: EspSystemEventLoop,
 ) -> Result<Box<EspWifi<'static>>> {
-    let mut esp_wifi = new_wifi(modem, sysloop.clone(), None)?;
+    let mut esp_wifi = new_wifi(modem, sysloop.clone(), None, "hardware-check")?;
     connect_sta(&mut esp_wifi, sysloop, ssid, pass)?;
     Ok(Box::new(esp_wifi))
 }

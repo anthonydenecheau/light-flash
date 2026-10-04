@@ -247,24 +247,24 @@ bit 0 identify, bit 1 device info, bit 2 scan, bit 3 hostname, bit 4 device name
   `ble_gatts_reset`, corrigé par l'appel explicite à `init()`.
 - [ ] **P3 — Coexistence** : avec BLE actif, l'association Wi-Fi au boot prend parfois plus de
   20 s au lieu de 4 ; `CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y` est déjà actif, à surveiller.
-- [ ] **P1 — Accès aux fonctions BOOT et RESET pour l'utilisateur final** (question du
-  2026-10-04). Sur l'applique finale, les boutons de la carte seront dans le boîtier. Décision à
-  prendre, recommandation : (a) un **bouton poussoir sur l'applique**, câblé entre GPIO9 et la
+- [ ] **P1 — Accès aux fonctions BOOT et RESET pour l'utilisateur final** (décidé le
+  2026-10-04 : bouton sur l'applique, documenté dans `HARDWARE.md` §7.1, plus actions dans la
+  page). Rappel des options : (a) un **bouton poussoir sur l'applique**, câblé entre GPIO9 et la
   masse (la carte a déjà la résistance de rappel), qui reprend les deux gestes : appui bref =
-  visible en Bluetooth + autorisation, appui long = réinitialisation ; (b) dans la **page**, trois
-  actions une fois sur le réseau : « Rendre visible en Bluetooth 5 min », « Oublier le Wi-Fi »
-  (avec confirmation) et « Redémarrer » ; (c) RESET n'a pas besoin d'être accessible, débrancher
-  suffit. Sans bouton accessible, alternative : fenêtre d'autorisation automatique de 3 min après
+  visible en Bluetooth + autorisation, appui long = réinitialisation ; (b) [x] dans la **page**,
+  trois actions une fois sur le réseau (faites le 2026-10-04) : « Rendre visible en Bluetooth »,
+  « Oublier le Wi-Fi » (avec confirmation) et « Redémarrer » ; (c) RESET n'a pas besoin d'être
+  accessible, débrancher suffit. Sans bouton accessible, alternative : fenêtre d'autorisation automatique de 3 min après
   la mise sous tension tant que la lampe n'est pas provisionnée (`require_authorization`
   conditionnel) ; moins sûr, mais c'est l'usage courant des objets connectés.
-- [ ] **P1 — Nommer chaque applique** (question du 2026-10-04, plusieurs lampes). Aujourd'hui le
-  nom `light-flash` est fixe partout (BLE, mDNS, DHCP, point d'accès) : deux lampes entreraient en
-  conflit (mDNS renomme en `light-flash-2`, le nom DHCP devient ambigu). À faire : (1) suffixe
-  unique par défaut dérivé de l'adresse MAC (`light-flash-df60`) ; (2) nom choisi par l'utilisateur
-  (« salon 1 ») stocké en NVS, modifiable depuis la page et par la commande Improv Device name
-  (`0x06`), normalisé pour l'hôte mDNS et DHCP (`salon-1`, minuscules, lettres, chiffres, tirets,
-  `esp_netif_set_hostname` à chaud) et affiché tel quel dans le titre de la page et le nom BLE.
-- [ ] **P2 — Piloter plusieurs appliques ensemble** (question du 2026-10-04). Chaque lampe a sa
+- [x] **Nommer chaque applique** (fait le 2026-10-04) : nom par défaut `light-flash-<MAC>`
+  (`light-flash-df60`), nom choisi par l'utilisateur en NVS (`POST /api/name`, page, puis
+  redémarrage), nom d'hôte dérivé (`light_core::naming::hostname_from`, testé) appliqué à mDNS,
+  DHCP (`esp_netif_set_hostname`), SSID du point d'accès et nom BLE. Vérifié : « Salon 1 » →
+  `salon-1.local` joignable. Reste : la commande Improv Device name (`0x06`), P3.
+- [ ] **P2 — Piloter plusieurs appliques ensemble** (validé le 2026-10-04 : documenter Home
+  Assistant, puis mode groupe dans la page ; ordre global : nom par applique, actions dans la
+  page, mode groupe). Chaque lampe a sa
   page et ses réglages ; rien ne les relie. Options : (a) **Home Assistant** : groupe de lumières,
   zéro code côté lampe, c'est la voie naturelle pour qui a une domotique ; (b) **groupe dans la
   page** : la lampe découvre ses semblables par mDNS (`_http._tcp`), les expose sur `/api/peers`,
@@ -285,6 +285,24 @@ bit 0 identify, bit 1 device info, bit 2 scan, bit 3 hostname, bit 4 device name
 - [ ] Carte, avec l'appli Home Assistant ou Improv sur téléphone : scénario nominal avec appui
   réel sur BOOT, mauvais mot de passe, réinitialisation d'usine par appui long.
 
+### 2.5 Interface utilisateur (page de pilotage)
+
+Décision du 2026-10-04 : **page embarquée, soignée, sans framework**, servie gzip depuis la flash
+(≈ 10 Ko), avec logo, thème clair/sombre, manifeste pour l'écran d'accueil, API JSON ; Home
+Assistant en complément (pas de remplacement). Alternatives écartées : appli native (coût
+disproportionné hors produit commercial), page hébergée hors de la lampe (bloquée par le
+contenu mixte https→http), Matter (pile trop lourde ici).
+
+- [x] Page v2 (2026-10-04) : en-tête logo + nom + situation réseau, carte Lumière (bouton,
+  12 pastilles + roue, luminosité, effets), carte Réseau (SSID, signal, adresses, changement de
+  Wi-Fi, oubli), carte Lampe (nom, Bluetooth, redémarrage, informations), rafraîchissement
+  toutes les 4 s, toasts, confirmations. Vérifiée en clair et sombre avec Chrome sans tête.
+- [ ] **P2 — Mode groupe** (validé) : découverte des autres lampes par mDNS (`_http._tcp`),
+  `/api/peers`, en-têtes CORS sur l'API, et dans la page un sélecteur « toutes les lampes ».
+- [ ] **P3 — Scènes et programmation** : scènes mémorisées (couleur + effet + luminosité),
+  minuterie d'extinction, programmation horaire (nécessite l'heure par SNTP).
+- [ ] **P3 — Effets supplémentaires** et vitesse d'effet réglable depuis la page.
+
 ---
 
 ## 3. Corrections de bugs
@@ -301,9 +319,9 @@ n'a aucun `unwrap()` dans les callbacks : `on_write` ne fait que relayer vers un
 - [ ] **P3 — Sécurité BLE** : Improv ne prévoit pas d'appairage, la protection est l'appui sur
   BOOT. Un appairage avec bonding (`ble_device.security().set_auth(...)`,
   `CONFIG_BT_NIMBLE_NVS_PERSIST=y`) n'aurait de sens qu'avec un service de pilotage BLE (§2.2).
-- [ ] **P2 — Sécurité HTTP** : aucune authentification sur `/api/light` ni `/connect`. Acceptable
-  sur le point d'accès de secours (mot de passe WPA2) et sur un réseau domestique ; prévoir au
-  minimum un jeton si la lampe est exposée au-delà.
+- [ ] **P2 — Sécurité HTTP** : aucune authentification sur l'API, y compris `/api/system/*` et
+  `/api/name`. Acceptable sur le point d'accès de secours (mot de passe WPA2) et sur un réseau
+  domestique ; prévoir au minimum un jeton si la lampe est exposée au-delà.
 
 ### `crates/wifi/src/lib.rs`
 
@@ -516,9 +534,9 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
      lampe »), avec la méthode Livebox.
   4. [x] **Improv (§2.4, fait le 2026-10-04)** : à la fin du provisioning, la lampe renvoie
      `http://light-flash.local/` et `http://<ip>/`, l'appli du téléphone les ouvre directement.
-  5. [ ] **P3 — Page installable (PWA)** : manifeste + icône pour un raccourci « application »
-     sur le téléphone ; ne résout pas l'adresse, à combiner avec 1 à 3. En attendant, le manuel
-     explique « Ajouter à l'écran d'accueil ».
+  5. [x] **Page installable** (2026-10-04) : `/manifest.json` (nom de la lampe, `standalone`)
+     et icône 192 px ; pas de service worker (l'installation reste possible, sans mode hors
+     ligne, sans objet pour une lampe locale).
   6. [x] **Domotique et accès distant** : documentés dans le README (Home Assistant via mDNS,
      VPN ; jamais d'ouverture de port). L'intégration Home Assistant elle-même reste à faire (§7).
 

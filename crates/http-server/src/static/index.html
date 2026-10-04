@@ -2,118 +2,177 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#15171c">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <title>light-flash</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; background: #f3f4f6; color: #111; }
-  @media (prefers-color-scheme: dark) { body { background: #16181d; color: #eee; } section { background: #22252c !important; } }
-  main { max-width: 26rem; margin: 0 auto; display: grid; gap: 1rem; }
-  section { background: #fff; border-radius: .75rem; padding: 1rem 1.25rem; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
-  h1 { margin: 0 0 .25rem; font-size: 1.4rem; } h2 { margin: 0 0 .75rem; font-size: 1.05rem; }
-  label { display: grid; gap: .3rem; margin-bottom: .9rem; font-size: .95rem; }
-  input, select, button { font: inherit; }
-  input[type=range] { width: 100%; }
-  input[type=color] { width: 100%; height: 2.6rem; border: 1px solid #bbb; border-radius: .4rem; padding: 0; background: none; }
-  input[type=text], input[type=password], select { padding: .55rem; border: 1px solid #bbb; border-radius: .4rem; width: 100%; box-sizing: border-box; background: transparent; color: inherit; }
-  button { padding: .65rem 1rem; border: 0; border-radius: .5rem; background: #2563eb; color: #fff; cursor: pointer; width: 100%; }
-  button.off { background: #6b7280; }
-  .status { font-size: .85rem; opacity: .75; min-height: 1.2em; }
-  .err { color: #dc2626; opacity: 1; }
+:root{--bg:#f3f4f7;--card:#fff;--text:#15171c;--muted:#687083;--line:#e3e6ec;--accent:#4f6df5;--accent2:#c23ad6;--danger:#d92d20;--ok:#17a34a;--warn:#e9a23b;--r:18px;--shadow:0 1px 2px rgba(16,24,40,.05),0 10px 28px rgba(16,24,40,.07)}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#1a1d24;--text:#eef0f4;--muted:#98a2b3;--line:#2b303b;--shadow:0 1px 2px rgba(0,0,0,.45),0 10px 28px rgba(0,0,0,.4)}}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased}
+main{max-width:30rem;margin:0 auto;padding:1rem 1rem 2.5rem;display:grid;gap:1rem}
+header{display:flex;align-items:center;gap:.9rem;padding:.4rem .2rem}
+header img{width:58px;height:58px;border-radius:50%;box-shadow:var(--shadow);flex:none}
+header h1{margin:0;font-size:1.4rem;font-weight:650;letter-spacing:-.01em;overflow-wrap:anywhere}
+.sub{color:var(--muted);font-size:.85rem;display:flex;align-items:center;gap:.4rem;margin-top:.2rem}
+.dot{width:.55rem;height:.55rem;border-radius:50%;background:var(--muted);flex:none}.dot.on{background:var(--ok)}.dot.ap{background:var(--warn)}
+section{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:1.1rem 1.2rem}
+h2{margin:0 0 .9rem;font-size:.78rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:650}
+.power{width:100%;border:0;border-radius:14px;padding:1rem;font:inherit;font-weight:650;font-size:1.05rem;color:#fff;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 8px 20px rgba(79,109,245,.25);transition:transform .08s,filter .2s,box-shadow .2s}
+.power.off{background:var(--muted);box-shadow:none}.power:active{transform:scale(.985)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin:1rem 0 .4rem;font-size:.95rem;font-weight:500}
+.row .val{color:var(--muted);font-weight:400;font-variant-numeric:tabular-nums}
+.swatches{display:grid;grid-template-columns:repeat(6,1fr);gap:.55rem}
+.swatches button,.swatches label{aspect-ratio:1;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;position:relative;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.swatches .sel{border-color:var(--text);box-shadow:0 0 0 2px var(--card),inset 0 0 0 1px rgba(0,0,0,.08)}
+.swatches label{background:conic-gradient(#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)}
+.swatches label input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
+input[type=range]{width:100%;accent-color:var(--accent);height:2.2rem;margin:0}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:.3rem;background:var(--bg);padding:.3rem;border-radius:12px}
+.seg button{border:0;background:transparent;padding:.6rem .3rem;border-radius:9px;font:inherit;font-size:.92rem;color:var(--muted);cursor:pointer}
+.seg button.sel{background:var(--card);color:var(--text);box-shadow:var(--shadow);font-weight:600}
+dl{display:grid;grid-template-columns:auto 1fr;gap:.45rem 1rem;margin:0;font-size:.93rem}dt{color:var(--muted)}dd{margin:0;overflow-wrap:anywhere}dd a{color:var(--accent);text-decoration:none}
+.bars{display:inline-flex;gap:2px;align-items:flex-end;height:.85rem;margin-right:.4rem;vertical-align:-1px}.bars i{width:3px;background:var(--line);border-radius:1px}.bars i.on{background:var(--ok)}
+details{margin-top:1rem}summary{cursor:pointer;color:var(--accent);font-weight:500;list-style:none;font-size:.95rem}summary::-webkit-details-marker{display:none}summary::before{content:"▸ "}details[open] summary::before{content:"▾ "}
+label.f{display:grid;gap:.3rem;margin:.8rem 0 0;font-size:.85rem;color:var(--muted)}
+input[type=text],input[type=password]{font:inherit;font-size:1rem;padding:.65rem .75rem;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--text);width:100%}
+input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{font:inherit;font-size:.93rem;padding:.7rem .95rem;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--text);cursor:pointer;font-weight:500}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}.btn.danger{color:var(--danger)}.btn:disabled{opacity:.5;cursor:default}
+.actions{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.9rem}
+.meta{color:var(--muted);font-size:.8rem;margin:1rem 0 0;line-height:1.6}
+#toast{position:fixed;left:50%;bottom:1.2rem;transform:translate(-50%,16px);background:var(--text);color:var(--bg);padding:.65rem 1.1rem;border-radius:999px;font-size:.9rem;opacity:0;transition:.25s;pointer-events:none;max-width:90vw;text-align:center}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+footer{text-align:center;color:var(--muted);font-size:.75rem}
+body.busy section{opacity:.6;pointer-events:none}
 </style>
 </head>
 <body>
 <main>
-  <section>
-    <h1>light-flash</h1>
-    <div class="status" id="status">Connexion à la lampe…</div>
-  </section>
+<header>
+  <img src="__LOGO__" alt="">
+  <div><h1 id="name">light-flash</h1><div class="sub"><span class="dot" id="dot"></span><span id="netline">Connexion à la lampe…</span></div></div>
+</header>
 
-  <section>
-    <h2>Lumière</h2>
-    <button id="power">Allumer</button>
-    <br><br>
-    <label>Couleur <input type="color" id="color" value="#ffb464"></label>
-    <label>Luminosité <span id="brightness-value">160</span>/255
-      <input type="range" id="brightness" min="0" max="255" value="160"></label>
-    <label>Effet
-      <select id="effect">
-        <option value="solid">Couleur unie</option>
-        <option value="breathe">Respiration</option>
-        <option value="rainbow">Arc-en-ciel</option>
-      </select></label>
-  </section>
+<section>
+  <h2>Lumière</h2>
+  <button class="power" id="power" aria-pressed="false">Allumer</button>
+  <div class="row"><span>Couleur</span><span class="val" id="colorval">–</span></div>
+  <div class="swatches" id="swatches"></div>
+  <div class="row"><span>Luminosité</span><span class="val" id="brval">–</span></div>
+  <input type="range" id="brightness" min="1" max="255" value="160" aria-label="Luminosité">
+  <div class="row"><span>Effet</span></div>
+  <div class="seg" id="effects" role="group" aria-label="Effet">
+    <button data-e="solid">Uni</button><button data-e="breathe">Respiration</button><button data-e="rainbow">Arc-en-ciel</button>
+  </div>
+</section>
 
-  <section>
-    <h2>Réseau Wi-Fi</h2>
-    <form id="wifi">
-      <label>Nom du réseau (SSID) <input type="text" name="wifi_ssid" maxlength="32" required></label>
-      <label>Mot de passe <input type="password" name="wifi_psk" maxlength="64"></label>
-      <button type="submit">Enregistrer et redémarrer</button>
+<section>
+  <h2>Réseau</h2>
+  <dl>
+    <dt>Réseau</dt><dd id="ssid">–</dd>
+    <dt>Signal</dt><dd id="rssi">–</dd>
+    <dt>Adresse</dt><dd id="ip">–</dd>
+    <dt>Accès</dt><dd id="urls">–</dd>
+  </dl>
+  <details>
+    <summary>Changer de réseau Wi-Fi</summary>
+    <form id="wifi" autocomplete="off">
+      <label class="f">Nom du réseau (SSID)<input type="text" name="wifi_ssid" maxlength="32" required></label>
+      <label class="f">Mot de passe<input type="password" name="wifi_psk" maxlength="64"></label>
+      <div class="actions"><button class="btn primary" type="submit">Enregistrer et redémarrer</button></div>
     </form>
-    <div class="status" id="wifi-status"></div>
-  </section>
+  </details>
+  <div class="actions"><button class="btn danger" id="forget">Oublier le Wi-Fi…</button></div>
+</section>
+
+<section>
+  <h2>Lampe</h2>
+  <form id="rename">
+    <label class="f">Nom de la lampe<input type="text" id="newname" maxlength="32" required placeholder="Salon 1"></label>
+    <div class="actions"><button class="btn primary" type="submit">Renommer et redémarrer</button></div>
+  </form>
+  <div class="actions">
+    <button class="btn" id="ble">Rendre visible en Bluetooth</button>
+    <button class="btn" id="restart">Redémarrer…</button>
+  </div>
+  <p class="meta" id="meta"></p>
+</section>
+
+<footer>light-flash <span id="version"></span></footer>
 </main>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script>
-const $ = (id) => document.getElementById(id);
-const status = $("status"), power = $("power"), color = $("color"),
-      brightness = $("brightness"), brightnessValue = $("brightness-value"), effect = $("effect");
+const $ = id => document.getElementById(id);
+const PRESETS = ["#ffb464","#ffd9a8","#ffffff","#cfe3ff","#ff2d2d","#ff8c1a","#ffd21f","#2ecc71","#19c3c3","#2f80ff","#a855f7","#ff5fa2"];
+const EFFECTS = {solid:"uni", breathe:"respiration", rainbow:"arc-en-ciel"};
+let light = null, status = null, toastTimer;
 
-function show(view) {
-  power.textContent = view.power ? "Éteindre" : "Allumer";
-  power.classList.toggle("off", view.power);
-  color.value = view.color;
-  brightness.value = view.brightness;
-  brightnessValue.textContent = view.brightness;
-  effect.value = view.effect;
-  status.textContent = view.power ? `Allumée, ${view.effect}, ${view.color}` : "Éteinte";
-  status.classList.remove("err");
+function toast(msg, ms = 2600) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), ms); }
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  let data = {}; try { data = await r.json(); } catch (_) {}
+  if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+  return data;
 }
 
-function fail(message) { status.textContent = message; status.classList.add("err"); }
-
-async function load() {
-  try {
-    const r = await fetch("/api/light");
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    show(await r.json());
-  } catch (e) { fail(`Lampe injoignable : ${e.message}`); }
+// ---- lumière
+function paintLight(v) {
+  light = v;
+  const p = $("power"); p.textContent = v.power ? "Éteindre" : "Allumer"; p.classList.toggle("off", !v.power); p.setAttribute("aria-pressed", v.power);
+  $("colorval").textContent = v.color; $("brightness").value = v.brightness; $("brval").textContent = Math.round(v.brightness / 255 * 100) + " %";
+  document.querySelectorAll("#swatches button").forEach(b => b.classList.toggle("sel", b.dataset.c === v.color));
+  document.querySelectorAll("#effects button").forEach(b => b.classList.toggle("sel", b.dataset.e === v.effect));
 }
-
 let pending = null;
 async function patch(fields) {
-  // Une seule requête en vol ; les curseurs peuvent en produire des dizaines par seconde.
-  if (pending) { pending.next = fields; return; }
+  if (pending) { pending.next = Object.assign(pending.next || {}, fields); return; }
   pending = { next: null };
-  try {
-    const r = await fetch("/api/light", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) });
-    const body = await r.json();
-    if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
-    show(body);
-  } catch (e) { fail(`Erreur : ${e.message}`); }
-  const next = pending.next; pending = null;
-  if (next) patch(next);
+  try { paintLight(await api("/api/light", fields)); } catch (e) { toast("Erreur : " + e.message); }
+  const next = pending.next; pending = null; if (next) patch(next);
 }
+const sw = $("swatches");
+for (const c of PRESETS) { const b = document.createElement("button"); b.type = "button"; b.dataset.c = c; b.style.background = c; b.setAttribute("aria-label", "Couleur " + c); b.onclick = () => patch({ color: c }); sw.appendChild(b); }
+const wheel = document.createElement("label"); wheel.title = "Autre couleur"; const inp = document.createElement("input"); inp.type = "color"; inp.oninput = () => patch({ color: inp.value }); wheel.appendChild(inp); sw.appendChild(wheel);
+$("power").onclick = () => patch({ power: !(light && light.power) });
+$("brightness").oninput = e => { $("brval").textContent = Math.round(e.target.value / 255 * 100) + " %"; patch({ brightness: Number(e.target.value) }); };
+document.querySelectorAll("#effects button").forEach(b => b.onclick = () => patch({ effect: b.dataset.e }));
 
-power.addEventListener("click", () => patch({ power: power.classList.contains("off") ? false : true }));
-color.addEventListener("input", () => patch({ color: color.value }));
-brightness.addEventListener("input", () => { brightnessValue.textContent = brightness.value; patch({ brightness: Number(brightness.value) }); });
-effect.addEventListener("change", () => patch({ effect: effect.value }));
-
-$("wifi").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const out = $("wifi-status");
-  const fields = Object.fromEntries(new FormData(e.currentTarget).entries());
-  out.textContent = "Envoi…";
-  try {
-    const r = await fetch("/connect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) });
-    const body = await r.json();
-    out.textContent = r.ok ? body.message : `Refusé : ${body.error}`;
-  } catch (err) { out.textContent = `Erreur : ${err.message}`; }
-});
-
-load();
+// ---- réseau et système
+function bars(rssi) { const n = rssi == null ? 0 : rssi > -55 ? 4 : rssi > -65 ? 3 : rssi > -75 ? 2 : 1; return `<span class="bars">${[1,2,3,4].map(i => `<i class="${i <= n ? "on" : ""}" style="height:${i * 25}%"></i>`).join("")}</span>`; }
+function uptime(s) { const j = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return (j ? j + " j " : "") + (h || j ? h + " h " : "") + m + " min"; }
+function paintStatus(s) {
+  status = s; document.title = s.name; $("name").textContent = s.name; $("version").textContent = "v" + s.version; $("newname").placeholder = s.name;
+  const dot = $("dot"); dot.className = "dot " + (s.wifi_mode === "station" ? "on" : s.wifi_mode === "access-point" ? "ap" : "");
+  $("netline").textContent = s.wifi_mode === "station" ? "En ligne sur " + s.ssid : s.wifi_mode === "access-point" ? "Point d'accès de secours" : "Connexion au Wi-Fi…";
+  $("ssid").textContent = s.ssid || "–"; $("ip").textContent = s.ip || "–";
+  $("rssi").innerHTML = s.rssi == null ? "–" : bars(s.rssi) + s.rssi + " dBm";
+  $("urls").innerHTML = s.wifi_mode === "station" ? `<a href="http://${s.hostname}.local/">${s.hostname}.local</a> · <a href="http://${s.hostname}/">${s.hostname}</a>` : (s.ip ? `<a href="http://${s.ip}/">${s.ip}</a>` : "–");
+  $("ble").textContent = s.ble_active ? "Bluetooth actif (prolonger)" : "Rendre visible en Bluetooth";
+  $("meta").textContent = `${s.hardware} · ${s.led_count} LED, ${s.max_ma} mA max · allumée depuis ${uptime(s.uptime_s)} · ${Math.round(s.heap_free / 1024)} Ko libres`;
+}
+async function refresh() {
+  if (document.visibilityState !== "visible") return;
+  try { paintLight(await api("/api/light")); paintStatus(await api("/api/status")); }
+  catch (e) { $("netline").textContent = "Lampe injoignable"; $("dot").className = "dot"; }
+}
+async function action(path, body, confirmMsg) {
+  if (confirmMsg && !confirm(confirmMsg)) return;
+  document.body.classList.add("busy");
+  try { const r = await api(path, body || {}); toast(r.message || "OK", 4000); }
+  catch (e) { toast("Erreur : " + e.message, 4000); }
+  finally { document.body.classList.remove("busy"); }
+}
+$("wifi").onsubmit = e => { e.preventDefault(); action("/connect", Object.fromEntries(new FormData(e.target).entries())); };
+$("rename").onsubmit = e => { e.preventDefault(); action("/api/name", { name: $("newname").value }); };
+$("forget").onclick = () => action("/api/system/forget-wifi", {}, "Oublier le réseau Wi-Fi ? La lampe redémarrera sur son point d'accès de secours.");
+$("restart").onclick = () => action("/api/system/restart", {}, "Redémarrer la lampe ?");
+$("ble").onclick = () => action("/api/system/ble", {});
+refresh(); setInterval(refresh, 4000); document.addEventListener("visibilitychange", refresh);
 </script>
 </body>
 </html>

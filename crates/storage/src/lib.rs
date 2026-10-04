@@ -10,6 +10,7 @@ const NAMESPACE: &str = "light";
 const KEY_SSID: &str = "wifi_ssid";
 const KEY_PSK: &str = "wifi_psk";
 const KEY_STATE: &str = "light_state";
+const KEY_NAME: &str = "name";
 
 /// Stockage partagé entre threads (HTTP, persistance).
 pub type SharedStorage = Arc<Mutex<Storage>>;
@@ -104,10 +105,27 @@ impl Storage {
         Ok(())
     }
 
-    /// Réinitialisation d'usine : identifiants Wi-Fi et état de la lampe effacés.
+    /// Nom de la lampe choisi par l'utilisateur ; `None` si jamais défini.
+    pub fn device_name(&self) -> Result<Option<String>> {
+        let mut buf = [0u8; 4 * light_core::naming::NAME_MAX + 1];
+        Ok(self
+            .nvs
+            .get_str(KEY_NAME, &mut buf)?
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned))
+    }
+
+    pub fn set_device_name(&mut self, name: &str) -> Result<()> {
+        self.nvs.set_str(KEY_NAME, name)?;
+        log::info!("nom de la lampe enregistré : « {name} »");
+        Ok(())
+    }
+
+    /// Réinitialisation d'usine : identifiants Wi-Fi, état de la lampe et nom effacés.
     pub fn factory_reset(&mut self) -> Result<()> {
         self.clear_wifi_credentials()?;
         self.nvs.remove(KEY_STATE)?;
+        self.nvs.remove(KEY_NAME)?;
         log::warn!("NVS effacée : réinitialisation d'usine");
         Ok(())
     }

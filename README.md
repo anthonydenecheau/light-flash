@@ -51,10 +51,10 @@ Deux méthodes, au choix :
   `light-flash`. Appuyer brièvement sur le bouton BOOT de la carte (la lampe respire en bleu pendant
   60 s), saisir le réseau et le mot de passe : la lampe clignote en bleu, puis passe au vert et
   l'application ouvre sa page. Rouge : mot de passe ou réseau incorrect, réessayer.
-- **Par le point d'accès de secours** : sans Wi-Fi configuré, la lampe ouvre le réseau `light-flash`
-  (mot de passe `light-flash`, modifiable dans `cfg.toml`). S'y connecter, ouvrir
-  http://192.168.71.1/ et renseigner le réseau de la maison dans le formulaire ; la lampe redémarre
-  sur ce réseau.
+- **Par le point d'accès de secours** : sans Wi-Fi configuré, la lampe ouvre un réseau à son nom
+  (`light-flash-xxxx` par défaut, mot de passe `light-flash`, modifiable dans `cfg.toml`). S'y
+  connecter, ouvrir http://192.168.71.1/ et renseigner le réseau de la maison dans le formulaire ;
+  la lampe redémarre sur ce réseau.
 
 Un appui long (5 s) sur BOOT efface le Wi-Fi et l'état enregistrés, puis redémarre.
 
@@ -63,12 +63,13 @@ Un appui long (5 s) sur BOOT efface le Wi-Fi et l'état enregistrés, puis redé
 Une fois la lampe sur votre Wi-Fi, trois façons d'ouvrir sa page depuis un téléphone ou un
 ordinateur du même réseau, de la plus simple à la plus sûre :
 
-1. **http://light-flash.local/** : la lampe s'annonce en mDNS. Fonctionne nativement sur iPhone,
-   iPad, Mac, Windows 10 et plus, Linux. Sur Android, cela dépend de la version et du navigateur ;
-   si l'adresse ne répond pas, passer au point 2 ou 3.
-2. **http://light-flash/** : la lampe se présente à la box sous le nom `light-flash`. Beaucoup de
-   box résolvent ce nom sur le réseau local ; vérifié sur Livebox, qui répond aussi à
-   `light-flash.home`. Essayer `light-flash.lan` sur d'autres box.
+1. **http://<nom>.local/** (`light-flash-xxxx.local` par défaut, `salon-1.local` après avoir
+   nommé la lampe « Salon 1 » dans sa page) : la lampe s'annonce en mDNS. Fonctionne nativement
+   sur iPhone, iPad, Mac, Windows 10 et plus, Linux. Sur Android, cela dépend de la version et du
+   navigateur ; si l'adresse ne répond pas, passer au point 2 ou 3.
+2. **http://<nom>/** : la lampe se présente à la box sous son nom. Beaucoup de box résolvent ce
+   nom sur le réseau local ; vérifié sur Livebox, qui répond aussi à `<nom>.home`. Essayer
+   `<nom>.lan` sur d'autres box.
 3. **Adresse fixe** : dans l'interface de la box (Livebox : « Réseau », « DHCP », « Baux
    statiques » ; autres box : « réservation DHCP » ou « bail statique »), associer l'adresse MAC
    de la lampe à une adresse fixe, par exemple 192.168.1.50. L'adresse MAC et l'adresse courante

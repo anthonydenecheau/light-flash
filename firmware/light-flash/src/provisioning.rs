@@ -54,11 +54,13 @@ pub struct Config {
     pub require_authorization: bool,
 }
 
-/// Poignée pour les autres threads (debug HTTP) : simuler un appui court sur BOOT, couper le BLE.
+/// Poignée pour les autres threads : simuler un appui court sur BOOT (page, debug), couper le
+/// BLE (debug), savoir si le BLE est actif (page).
 #[derive(Clone, Default)]
 pub struct ProvisioningHandle {
     authorize_request: Arc<AtomicBool>,
     ble_off_request: Arc<AtomicBool>,
+    ble_active: Arc<AtomicBool>,
 }
 
 impl ProvisioningHandle {
@@ -68,6 +70,10 @@ impl ProvisioningHandle {
 
     pub fn ble_off_flag(&self) -> Arc<AtomicBool> {
         self.ble_off_request.clone()
+    }
+
+    pub fn ble_active_flag(&self) -> Arc<AtomicBool> {
+        self.ble_active.clone()
     }
 }
 
@@ -79,16 +85,11 @@ pub fn spawn(
     config: Config,
 ) -> Result<ProvisioningHandle> {
     let handle = ProvisioningHandle::default();
-    let authorize = handle.authorize_request.clone();
-    let ble_off = handle.ble_off_request.clone();
+    let flags = handle.clone();
     thread::Builder::new()
         .name("provision".into())
         .stack_size(STACK_SIZE)
-        .spawn(move || {
-            run(
-                button, storage, network, indication, config, authorize, ble_off,
-            )
-        })?;
+        .spawn(move || run(button, storage, network, indication, config, flags))?;
     Ok(handle)
 }
 
@@ -237,9 +238,13 @@ fn run(
     network: crate::network::NetworkHandle,
     indication: SharedIndication,
     config: Config,
-    authorize_request: Arc<AtomicBool>,
-    ble_off_request: Arc<AtomicBool>,
+    flags: ProvisioningHandle,
 ) {
+    let ProvisioningHandle {
+        authorize_request,
+        ble_off_request,
+        ble_active,
+    } = flags;
     let mut ble = match Ble::setup(config.device_name) {
         Ok(ble) => ble,
         Err(e) => {
@@ -247,6 +252,7 @@ fn run(
             return;
         }
     };
+    ble_active.store(true, Ordering::Relaxed);
     let device_info = DeviceInfo {
         firmware: "light-flash".into(),
         version: config.version.into(),
@@ -299,6 +305,7 @@ fn run(
             ble_until = now + BLE_WINDOW_MS;
             if !ble.enabled {
                 ble.enable();
+                ble_active.store(true, Ordering::Relaxed);
                 ble.publish_state(machine.state(), machine.error());
             }
             if machine.authorize(now) {
@@ -312,6 +319,7 @@ fn run(
         let ble_off = ble_off_request.swap(false, Ordering::Relaxed);
         if ble.enabled && (ble_off || now >= ble_until) && machine.state() != State::Provisioning {
             ble.disable();
+            ble_active.store(false, Ordering::Relaxed);
         }
 
         if machine.tick(now) {

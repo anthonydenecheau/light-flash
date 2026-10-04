@@ -115,7 +115,7 @@ premier scintillement ou LED fantôme, passer à l'adaptateur de niveau.
 |---|---|---|
 | LED embarquée (voyant : provisioning, erreurs) | GPIO2 | RMT TX canal 0 |
 | Données ruban 144 LED | GPIO3 | RMT TX canal 1 |
-| Bouton BOOT (autorisation Improv, reset usine) | GPIO9 | entrée, pull-up |
+| Bouton BOOT (autorisation Improv, reset usine) et **bouton de l'applique** | GPIO9 | entrée, pull-up (résistance déjà sur la carte) |
 | Réservés : I2C des capteurs embarqués (SHTC3, ICM-42670-P) | GPIO8 (SCL), GPIO10 (SDA) | |
 | Réservés : USB | GPIO18, GPIO19 | |
 | Réservés : UART0 | GPIO20 (RX), GPIO21 (TX) | |
@@ -125,6 +125,20 @@ Une trame de 144 LED dure ≈ 4,3 ms, ce qui laisse largement 60 images/s pour l
 Le plafond de courant se calcule dans le firmware par trame : par LED, (r + g + b) / 765 × 60 mA,
 plus 1 mA de veille ; la luminosité globale est réduite pour rester sous un budget configurable
 (par exemple 5 A). C'est la protection principale de l'alimentation et du ruban.
+
+### 7.1 Bouton de l'applique
+
+Un bouton poussoir sur l'applique, câblé entre GPIO9 et la masse, qui reprend les deux gestes :
+appui bref pour rendre la lampe visible en Bluetooth et autoriser la configuration, appui long
+pour tout effacer. C'est indispensable pour la première configuration, qui se fait sans réseau.
+
+Câblage : une borne du poussoir sur la broche **GPIO9** de la carte, l'autre sur **GND**. Rien
+d'autre : la carte a déjà la résistance de rappel vers 3,3 V, et le bouton BOOT de la carte reste
+fonctionnel en parallèle. Choisir un poussoir à contact momentané (pas un interrupteur), par
+exemple un bouton d'arcade 12 mm ou un poussoir tactile sur le boîtier, avec deux fils fins.
+GPIO9 est une broche d'amorçage de l'ESP32-C3 : ne jamais la maintenir à la masse pendant la mise
+sous tension, sinon la carte démarre en mode téléchargement au lieu du firmware ; un appui au
+démarrage n'a d'effet que si le bouton est enfoncé au moment précis de la mise sous tension.
 
 ## 8. Mise en route pas à pas
 

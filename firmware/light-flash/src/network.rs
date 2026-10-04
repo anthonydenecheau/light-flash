@@ -12,10 +12,11 @@ use esp_idf_svc::{
 use light_core::reconnect::{Action, Mode, Policy, Settings};
 use log::{error, info, warn};
 use std::{
+    net::Ipv4Addr,
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, Sender},
-        Arc,
+        Arc, Mutex,
     },
     thread,
     time::{Duration, Instant},
@@ -45,14 +46,39 @@ pub enum NetworkCommand {
     },
 }
 
+/// Situation réseau, lisible par les autres threads (page de pilotage).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NetworkStatus {
+    pub mode: NetMode,
+    pub ssid: String,
+    pub ip: Option<Ipv4Addr>,
+    pub rssi: Option<i32>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum NetMode {
+    #[default]
+    Connecting,
+    Station,
+    AccessPoint,
+}
+
 /// Poignée pour les autres threads.
 #[derive(Clone)]
 pub struct NetworkHandle {
     disconnect_request: Arc<AtomicBool>,
     commands: Sender<NetworkCommand>,
+    status: Arc<Mutex<NetworkStatus>>,
 }
 
 impl NetworkHandle {
+    pub fn status(&self) -> NetworkStatus {
+        self.status
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
     /// Drapeau partageable (debug HTTP) : une déconnexion de la station au prochain tick.
     pub fn disconnect_flag(&self) -> Arc<AtomicBool> {
         self.disconnect_request.clone()
@@ -92,12 +118,24 @@ pub fn spawn(
     let handle = NetworkHandle {
         disconnect_request: Arc::new(AtomicBool::new(false)),
         commands,
+        status: Arc::new(Mutex::new(NetworkStatus::default())),
     };
     let flag = handle.disconnect_request.clone();
+    let status = handle.status.clone();
     thread::Builder::new()
         .name("network".into())
         .stack_size(STACK_SIZE)
-        .spawn(move || run(wifi, sysloop, credentials, access_point, flag, inbox))?;
+        .spawn(move || {
+            run(
+                wifi,
+                sysloop,
+                credentials,
+                access_point,
+                flag,
+                inbox,
+                status,
+            )
+        })?;
     Ok(handle)
 }
 
@@ -108,7 +146,9 @@ fn run(
     ap: AccessPoint<'static>,
     disconnect_request: Arc<AtomicBool>,
     inbox: Receiver<NetworkCommand>,
+    status: Arc<Mutex<NetworkStatus>>,
 ) {
+    let publish = |s: NetworkStatus| *status.lock().unwrap_or_else(|p| p.into_inner()) = s;
     // Journal des événements station ; le callback tourne dans la tâche événements : court.
     let subscription = sysloop.subscribe::<WifiEvent, _>(|event| match event {
         WifiEvent::StaDisconnected(d) => warn!("Wi-Fi station déconnectée : {d:?}"),
@@ -141,6 +181,12 @@ fn run(
                     match &result {
                         Ok(ip) => {
                             info!("page de pilotage : http://{}/", ip.ip);
+                            publish(NetworkStatus {
+                                mode: NetMode::Station,
+                                ssid: new_credentials.ssid.clone(),
+                                ip: Some(ip.ip),
+                                rssi: wifi.get_rssi().ok(),
+                            });
                             credentials = Some(new_credentials);
                             policy.set_has_credentials(true);
                             policy.on_station_result(now, true);
@@ -151,7 +197,9 @@ fn run(
                                 new_credentials.ssid
                             );
                             if policy.on_station_result(now, false) == Action::StartAccessPoint {
-                                start_access_point(&mut wifi, &sysloop, &ap);
+                                if let Some(s) = start_access_point(&mut wifi, &sysloop, &ap) {
+                                    publish(s);
+                                }
                             }
                         }
                     }
@@ -173,6 +221,16 @@ fn run(
             }
         }
         let connected = policy.mode() == Mode::Station && wifi.is_connected().unwrap_or(false);
+        if policy.mode() == Mode::Station {
+            let mut s = status.lock().unwrap_or_else(|p| p.into_inner());
+            if connected {
+                s.rssi = wifi.get_rssi().ok();
+            } else if s.mode != NetMode::Connecting {
+                s.mode = NetMode::Connecting;
+                s.ip = None;
+                s.rssi = None;
+            }
+        }
         match policy.on_tick(now_ms(), connected) {
             Action::Wait => {}
             Action::ConnectStation => {
@@ -183,6 +241,12 @@ fn run(
                 let follow_up = match result {
                     Ok(ip) => {
                         info!("page de pilotage : http://{}/", ip.ip);
+                        publish(NetworkStatus {
+                            mode: NetMode::Station,
+                            ssid: c.ssid.clone(),
+                            ip: Some(ip.ip),
+                            rssi: wifi.get_rssi().ok(),
+                        });
                         policy.on_station_result(now_ms(), true)
                     }
                     Err(e) => {
@@ -191,21 +255,42 @@ fn run(
                     }
                 };
                 if follow_up == Action::StartAccessPoint {
-                    start_access_point(&mut wifi, &sysloop, &ap);
+                    if let Some(s) = start_access_point(&mut wifi, &sysloop, &ap) {
+                        publish(s);
+                    }
                 }
             }
-            Action::StartAccessPoint => start_access_point(&mut wifi, &sysloop, &ap),
+            Action::StartAccessPoint => {
+                if let Some(s) = start_access_point(&mut wifi, &sysloop, &ap) {
+                    publish(s);
+                }
+            }
         }
         thread::sleep(TICK);
     }
 }
 
-fn start_access_point(wifi: &mut EspWifi<'static>, sysloop: &EspSystemEventLoop, ap: &AccessPoint) {
+fn start_access_point(
+    wifi: &mut EspWifi<'static>,
+    sysloop: &EspSystemEventLoop,
+    ap: &AccessPoint,
+) -> Option<NetworkStatus> {
     match wifi::start_access_point(wifi, sysloop.clone(), ap) {
-        Ok(ip) => info!(
-            "point d'accès « {} » : s'y connecter puis ouvrir http://{}/",
-            ap.ssid, ip.ip
-        ),
-        Err(e) => error!("démarrage du point d'accès : {e}"),
+        Ok(ip) => {
+            info!(
+                "point d'accès « {} » : s'y connecter puis ouvrir http://{}/",
+                ap.ssid, ip.ip
+            );
+            Some(NetworkStatus {
+                mode: NetMode::AccessPoint,
+                ssid: ap.ssid.to_owned(),
+                ip: Some(ip.ip),
+                rssi: None,
+            })
+        }
+        Err(e) => {
+            error!("démarrage du point d'accès : {e}");
+            None
+        }
     }
 }

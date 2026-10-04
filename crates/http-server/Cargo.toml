@@ -3,7 +3,7 @@ name = "http-server"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Serveur HTTP de la lampe : page de pilotage, API JSON, formulaire Wi-Fi."
+description = "Serveur HTTP de la lampe : page de pilotage, API JSON, formulaire Wi-Fi, actions système."
 
 [dependencies]
 anyhow.workspace = true
@@ -15,4 +15,6 @@ serde.workspace = true
 serde_json.workspace = true
 
 [build-dependencies]
+base64.workspace = true
 embuild.workspace = true
+flate2.workspace = true

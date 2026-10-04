@@ -40,8 +40,8 @@ d'ESP-IDF, versions communes dans `[workspace.dependencies]`, `Cargo.lock` commi
 | `crates/improv/` | lib | Protocole Improv Wi-Fi BLE **sans dépendance ESP** : UUID, paquets RPC (checksum), `Machine` (autorisation, provisioning, résultat). Testé sur l'hôte. |
 | `crates/rgb-led/` | lib | Driver WS2812 via RMT (API `rmt-legacy`), N pixels (`set_pixels`), impulsions précalculées. |
 | `crates/wifi/` | lib | Wi-Fi bloquant sur un driver réutilisable : `connect_sta` (15 s max) et `start_access_point`, plus le raccourci `wifi()` pour `hardware-check`. |
-| `crates/storage/` | lib | NVS (espace `light`) : identifiants Wi-Fi et dernier état de la lampe (`light_state`, 7 octets versionnés) ; `SharedStorage` + `storage::lock`. |
-| `crates/http-server/` | lib | `GET /` page de pilotage (HTML embarqué, français), `GET/POST /api/light` (JSON `LightView` / `LightPatch`), `POST /connect` (identifiants Wi-Fi, callback fourni par le firmware), en build debug seulement (`DebugHooks`) : `POST /api/debug/wifi-disconnect`, `/api/debug/improv-authorize`, `/api/debug/ble-off`. |
+| `crates/storage/` | lib | NVS (espace `light`) : identifiants Wi-Fi, dernier état de la lampe (`light_state`, 7 octets versionnés), nom de la lampe ; `factory_reset` ; `SharedStorage` + `storage::lock`. |
+| `crates/http-server/` | lib | `GET /` page de pilotage (HTML + CSS + JS vanilla en français, logo en data URI, **gzip préparé par `build.rs`**, ~10 Ko servis), `/icon-192.png`, `/manifest.json` (écran d'accueil), `GET /api/status` (`StatusView` fourni par le firmware), `GET/POST /api/light` (`LightView` / `LightPatch`), `POST /connect`, `POST /api/name`, `POST /api/system/{restart,forget-wifi,ble}` (`SystemHooks`), et en build debug `DebugHooks` (`/api/debug/wifi-disconnect`, `improv-authorize`, `ble-off`). Tout est passé via `HttpContext`. |
 
 Fichiers racine : `Cargo.toml` (membres, versions, profils), `.cargo/config.toml` (cible, `ldproxy`,
 runner `espflash`, `ESP_IDF_VERSION`), `rust-toolchain.toml`, `sdkconfig.defaults` (commun à tous
@@ -168,9 +168,19 @@ Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puc
   l'état diffère de l'enregistré) ; ne jamais écrire en NVS depuis un handler HTTP ou la tâche
   lumière. Changer le format de `LightState::to_bytes` impose d'incrémenter `FORMAT_VERSION`
   (un ancien blob est alors ignoré, pas migré).
-- Noms sur le réseau : `light-flash.local` (mDNS, `EspMdns` dans `main.rs`, service `_http._tcp`)
-  et `light-flash` / `light-flash.home` via le DNS de la box (nom DHCP). Vérifiés le 2026-10-04
-  depuis le PC et une Livebox.
+- **Nom de la lampe** : `light_core::naming`. Nom affiché = NVS, sinon `light-flash-xxxx` (deux
+  derniers octets de la MAC station) ; nom d'hôte dérivé (`hostname_from`, minuscules ASCII,
+  tirets) utilisé pour mDNS (`<hôte>.local`), le nom DHCP (`esp_netif_set_hostname` dans
+  `wifi::new_wifi`), le SSID du point d'accès de secours et le nom BLE ; le nom affiché sert
+  d'instance mDNS, de nom Improv et de titre de page. Figé au démarrage : `POST /api/name`
+  enregistre puis redémarre. Les deux chaînes sont `Box::leak`ées en `&'static str` dans `main`.
+  Vérifié le 2026-10-04 : « Salon 1 » → `salon-1.local` ; la Livebox résout aussi `<hôte>.home`.
+- Page de pilotage : un seul fichier `crates/http-server/src/static/index.html`, placeholder
+  `__LOGO__` remplacé par `build.rs` (data URI de `logo-160.jpg`) puis gzippé ; `make build`
+  suffit après modification. Rendu vérifié avec Chrome sans tête :
+  `google-chrome --headless=new --screenshot=... --window-size=420,1180 --virtual-time-budget=8000
+  [--force-dark-mode] http://<nom>.local/` (ne pas utiliser `WebContentsForceDark`, qui inverse
+  les couleurs au lieu d'honorer `prefers-color-scheme`). Source du logo : `assets/logo-1024.jpg`.
 - BLE : seul le thread `provision` touche à NimBLE ; les callbacks `on_write` ne font que
   relayer les paquets sur un canal. Le GATT est créé une fois ; la pile est arrêtée
   (`BLEDevice::deinit`) 5 min après l'allumage, le dernier appui BOOT ou le dernier provisioning
