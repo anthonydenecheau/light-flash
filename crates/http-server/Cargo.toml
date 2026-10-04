@@ -1,0 +1,18 @@
+[package]
+name = "http-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Serveur HTTP de la lampe : page de pilotage, API JSON, formulaire Wi-Fi."
+
+[dependencies]
+anyhow.workspace = true
+embedded-svc.workspace = true
+esp-idf-svc.workspace = true
+light-core.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[build-dependencies]
+embuild.workspace = true

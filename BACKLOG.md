@@ -93,14 +93,15 @@ Notes de mise en œuvre :
   `Effect` (Solid, Breathe, Rainbow), `Renderer` (horloge + rendu d'une trame), `Gamma`,
   `hsv_to_rgb`, et `power::{estimate_ma, limit}` pour le plafond de courant. Zéro dépendance ESP ;
   23 tests sur l'hôte via `make test`.
-- [ ] **P1 — Brancher `light-core` dans `firmware/light-flash`** : tâche « lumière » propriétaire
-  du driver, canal `mpsc`, boucle de rendu à 50 images/s, `power::limit` avant envoi au ruban,
-  persistance différée de `LightState` en NVS.
-- Modèle de concurrence : **une tâche « lumière » possède le driver WS2812** et consomme des
-  `LightCommand` via `std::sync::mpsc` (ou `crossbeam-channel`). BLE, HTTP et bouton n'envoient que
-  des commandes. Résout proprement le fait que `WS2812RMT` ne peut pas être partagé, et garde les
-  callbacks NimBLE courts (ils tournent dans la tâche hôte NimBLE : jamais de transfert RMT bloquant
-  dedans).
+- [x] **`light-core` branché dans `firmware/light-flash`** (2026-10-04) : tâche lumière
+  (`light_task.rs`) propriétaire du driver, 50 images/s, `power::limit` avant envoi, écriture sur
+  les LED seulement quand la trame change. Modèle retenu : `SharedState = Arc<Mutex<LightState>>`
+  plutôt qu'un canal `mpsc`, car les producteurs ont aussi besoin de lire l'état (réponse JSON) ;
+  le verrou n'est jamais tenu pendant l'accès au driver, les callbacks restent courts.
+- [ ] **P1 — Persistance différée de `LightState` en NVS** (2 s après la dernière commande) et
+  restauration au démarrage ; aujourd'hui la lampe démarre allumée en blanc chaud.
+- [ ] **P2 — `LED_COUNT` et `MAX_MILLIAMPS`** (1 LED, 500 mA) à passer à 144 et au budget de
+  l'alimentation quand le ruban sera câblé (§6).
 - Service GATT « light » proposé (UUID 128 bits custom) : `power` (u8, R/W/N), `color` (3 octets
   RGB, R/W/N), `brightness` (u8, R/W/N), `effect` (u8, R/W/N), `status` (N). Le provisioning Wi-Fi
   n'y figure pas : il passe par le service Improv standard (§2.4), exposé par le même serveur
@@ -143,9 +144,8 @@ Notes de mise en œuvre :
   l'environnement ; 2) un commit dédié qui passe crates, ESP-IDF v5.5 et nightly ensemble, puis
   corrige les ruptures d'API (`WifiEvent`, NVS) ; 3) re-valider sur carte. Ne pas mélanger cette
   mise à jour avec une fonctionnalité.
-- [ ] Ne pas merger `feature/connect2Wifi` en l'état (décision §1) ; en extraire uniquement
-  l'alignement sur `esp-idf-svc 0.51`, puis garder la branche comme référence pour un éventuel
-  repli SoftAP. Ne pas laisser deux `main.rs` incompatibles vivre en parallèle.
+- [x] `feature/connect2Wifi` revue et intégrée dans `master` (2026-10-04, §3) ; la branche
+  distante peut être supprimée (`git push origin --delete feature/connect2Wifi`).
 
 ### 2.4 Provisioning Wi-Fi : Improv Wi-Fi sur BLE (décision du 2026-10-04)
 
@@ -222,43 +222,37 @@ Commandes RPC : `0x01` Send Wi-Fi settings, data = `[len ssid][ssid][len psk][ps
 
 ## 3. Corrections de bugs
 
-### `firmware/light-flash/src/main.rs` (BLE)
+### `firmware/light-flash/src/main.rs`
 
-- [ ] **P0 — Aucun pilotage de LED.** Le firmware « applique » ne fait que notifier un compteur.
-  La caractéristique est `READ | NOTIFY` : impossible d'écrire dessus, donc impossible de piloter
-  quoi que ce soit. Ajouter `WRITE` + `on_write`.
-- [ ] **P1 — Logger non initialisé.** `log` est en dépendance mais `EspLogger::initialize_default()`
-  n'est jamais appelé ; le code utilise `println!`. Initialiser le logger et basculer sur `log::info!`.
-- [ ] **P1 — `unwrap()` dans le callback `on_connect`** (`update_conn_params(...).unwrap()`) :
-  un échec de négociation fait paniquer la tâche NimBLE → reboot. Logger l'erreur et continuer.
-- [ ] **P2 — `main()` retourne `()`** : passer à `anyhow::Result<()>` comme les autres crates.
+Le `main.rs` de démonstration BLE a été remplacé le 2026-10-04 (tâche lumière + Wi-Fi + HTTP) ;
+ses défauts (aucun pilotage de LED, logger non initialisé, `unwrap()` dans un callback NimBLE,
+`main()` sans `Result`) disparaissent avec lui. À reprendre lors de l'implémentation d'Improv
+(§2.4) : caractéristiques en `WRITE` + `on_write`, aucun `unwrap()` dans les callbacks NimBLE.
 - [x] **Dépendances inutiles** (fait le 2026-10-04) : `heapless` et la dépendance directe à
   `esp-idf-sys` retirées, `link_patches` appelé via `esp_idf_svc::sys`, section `[features]` vide
   supprimée.
-- [ ] **P2 — Sécurité BLE** : aucune authentification ; n'importe qui à portée peut se connecter.
-  Au minimum un appairage « Just Works » avec bonding (`ble_device.security().set_auth(...)`) et
-  `CONFIG_BT_NIMBLE_NVS_PERSIST=y` pour mémoriser les appairages.
+- [ ] **P2 — Sécurité BLE** (pour Improv, §2.4) : appairage « Just Works » avec bonding
+  (`ble_device.security().set_auth(...)`) et `CONFIG_BT_NIMBLE_NVS_PERSIST=y`.
+- [ ] **P2 — Sécurité HTTP** : aucune authentification sur `/api/light` ni `/connect`. Acceptable
+  sur le point d'accès de secours (mot de passe WPA2) et sur un réseau domestique ; prévoir au
+  minimum un jeton si la lampe est exposée au-delà.
 
 ### `crates/wifi/src/lib.rs`
 
-- [ ] **P1 — `expect()` sur la conversion SSID / mot de passe** : un SSID > 32 caractères ou un mot
-  de passe > 64 caractères fait paniquer au lieu de retourner une erreur. Remplacer par
-  `.map_err(...)?`.
+- [x] **`expect()` sur la conversion SSID / mot de passe** : remplacés par des erreurs (2026-10-04).
 - [ ] **P1 — Aucune reconnexion.** Après une coupure de l'AP, la lampe reste déconnectée jusqu'au
   reboot. S'abonner à `WifiEvent::StaDisconnected` sur l'`EspSystemEventLoop` et relancer
   `connect()` avec backoff.
-- [ ] **P2 — `EspWifi::new(modem, sysloop, None)`** : passer la partition NVS (`Some(nvs)`) pour que
-  l'IDF conserve la calibration RF et les derniers paramètres (démarrage Wi-Fi plus rapide).
+- [x] **`EspWifi::new(modem, sysloop, None)`** : `light-flash` passe désormais `Some(nvs)`
+  (2026-10-04) ; `hardware-check` reste sans NVS via le raccourci `wifi()`.
 - [ ] **P3 — Méthode d'auth devinée** (`WPA2Personal` si mot de passe non vide) : WPA3-only non géré.
   Utiliser `AuthMethod::WPA2WPA3Personal` ou la valeur renvoyée par le scan.
 
 ### `crates/rgb-led/src/lib.rs`
 
-- [ ] **P0 — Un seul pixel.** Le ruban cible compte 144 LED (§6), soit 3456 paires d'impulsions
-  par trame : ajouter `set_pixels(&[RGB8])` avec `VariableLengthSignal` (le driver RMT envoie les
-  items par morceaux au-delà de sa mémoire interne), ou adopter la crate `ws2812-esp32-rmt-driver`
-  + trait `smart-leds`, qui donne accès aux effets de l'écosystème `smart-leds`. Prévoir deux
-  instances : canal 0 pour la LED de statut, canal 1 pour le ruban.
+- [x] **Un seul pixel** : `set_pixels(&[RGB8])` avec `VariableLengthSignal` et impulsions
+  précalculées (2026-10-04). Validé sur la LED embarquée ; à valider sur 144 LED une fois le ruban
+  câblé (§6). Alternative toujours ouverte : `ws2812-esp32-rmt-driver` + `smart-leds`.
 - [ ] **P2 — Pas de temps de reset** (> 50 µs à l'état bas) après la trame : deux `set_pixel`
   rapprochés peuvent être interprétés comme une seule trame. Ajouter une pulse basse finale ou
   un délai.
@@ -275,28 +269,40 @@ Commandes RPC : `0x01` Send Wi-Fi settings, data = `[len ssid][ssid][len psk][ps
 - [x] **Modification de `cfg.toml` non détectée** (fait le 2026-10-04) : `build.rs` émet
   `cargo:rerun-if-changed` sur `cfg.toml`, plus besoin de `cargo clean`.
 
-### Branche `feature/connect2Wifi`
+### Branche `feature/connect2Wifi` — revue et intégration (2026-10-04)
 
-Points à traiter **seulement si** le repli SoftAP est finalement conservé (§1, §2.4) ; sinon la
-branche peut être archivée telle quelle.
+Revue de `common/lib/http_server`, `common/lib/wifi_ap` et du `main.rs` de la branche, puis
+intégration dans `master` sous `crates/http-server` et `crates/wifi`. La branche peut être supprimée.
 
-- [ ] **P0 — Fuite des identifiants** : le handler `/connect` logge SSID et mot de passe en clair
-  (`info!("Credentials: …")`) **et les renvoie dans la réponse HTTP**. Supprimer les deux.
-- [ ] **P0 — Provisioning incomplet** : les identifiants reçus ne sont ni stockés en NVS ni utilisés
-  pour basculer en STA. Le portail ne sert à rien en l'état.
-- [ ] **P1 — Mot de passe AP codé en dur** (`password123`) dans `wifi_ap/src/lib.rs`.
-  Générer un mot de passe par carte (dérivé de l'adresse MAC) ou le lire depuis `cfg.toml`/NVS.
-- [ ] **P1 — Code mort dans `main.rs`** : `server_thread.join()` sur un thread qui `park()` en
-  boucle ne retourne jamais ; la boucle « Still running » qui suit est inatteignable. Garder
-  `server` vivant dans `main` et boucler avec `sleep`.
-- [ ] **P2 — `RUST_BACKTRACE=1` dans `http_server/sdkconfig.defaults`** : ce n'est pas une clé
-  sdkconfig, la ligne est ignorée.
-- [ ] **P2 — Hostname « not fixed »** (commits `eb569ad`, `208f530`) : `CONFIG_LWIP_LOCAL_HOSTNAME`
-  n'affecte que le nom DHCP. Pour `light.local` il faut mDNS : ajouter le composant
-  `espressif/mdns` via `[package.metadata.esp-idf-sys.extra_components]` (il n'est plus livré avec
-  ESP-IDF 5.x) et utiliser `esp_idf_svc::mdns::EspMdns`.
-- [ ] **P2 — `embedded-svc` en dépendance directe** : passer par les ré-exports
-  `esp_idf_svc::http` / `esp_idf_svc::io` pour ne pas épingler une version séparée.
+- [x] **Fuite des identifiants** : `/connect` journalisait SSID et mot de passe et renvoyait le
+  mot de passe dans la réponse. Corrigé : seul le SSID est journalisé, la réponse est un JSON neutre.
+- [x] **Provisioning incomplet** : rien n'était stocké ni appliqué. Corrigé : validation des
+  longueurs (`WifiCredentials::new`), écriture NVS (`crates/storage`), redémarrage 2 s plus tard,
+  station au boot suivant avec repli point d'accès.
+- [x] **Mot de passe AP codé en dur** (`password123`) : lu dans `cfg.toml` (`ap_password`,
+  8 caractères minimum, vide = ouvert avec avertissement).
+- [x] **Code mort dans `main.rs`** (`join()` d'un thread qui `park()`) : `main` garde le serveur
+  vivant et boucle avec `sleep`, en journalisant le tas libre toutes les minutes.
+- [x] **`RUST_BACKTRACE=1` dans un `sdkconfig.defaults`** : disparu avec le `sdkconfig` unique.
+- [x] **Réponses sans `Content-Type`**, erreurs JSON renvoyées en 200, corps non borné
+  (`MAX_LEN` 128 trop juste pour un SSID + mot de passe) : `Content-Type` sur toutes les réponses,
+  400/413 explicites, corps borné à 512 octets, `deny_unknown_fields`.
+- [x] **Logo PNG de 134 Ko embarqué** en fond de page : retiré (flash et bande passante du point
+  d'accès) ; page de pilotage de 5 Ko, sans ressource externe, en français.
+- [x] **`wifi_ap` : `EspWifi::wrap_all` + netif DHCP client sur un point d'accès** : remplacé par
+  une configuration AP simple sur le driver partagé (`start_access_point`), même driver réutilisé
+  pour la station (`connect_sta`), ce qui permet le repli sans recréer le modem.
+- [x] **`scan()` systématique avant `connect()`** dans `wifi` : supprimé (2 à 3 s de boot
+  gagnées) ; `expect()` sur les conversions SSID/mot de passe remplacés par des erreurs.
+- [ ] **P2 — Hostname `light.local`** : `CONFIG_LWIP_LOCAL_HOSTNAME` n'affecte que le nom DHCP.
+  Pour mDNS, ajouter le composant `espressif/mdns` via
+  `[package.metadata.esp-idf-sys.extra_components]` et utiliser `esp_idf_svc::mdns::EspMdns`.
+- [ ] **P2 — `embedded-svc` en dépendance directe** de `http-server` (traits `Headers`, `Read`,
+  `Write`) : vérifier si `esp_idf_svc::http` / `esp_idf_svc::io` les ré-exportent en 0.53 et
+  supprimer la dépendance lors de la mise à jour.
+- [ ] **P2 — Portail captif** : sans serveur DNS répondant à tout, le téléphone n'ouvre pas la
+  page automatiquement ; il faut saisir http://192.168.71.1/. À ajouter si le repli SoftAP reste
+  le mode d'entrée principal.
 
 ---
 
@@ -324,10 +330,9 @@ branche peut être archivée telle quelle.
 
 ### 4.3 Exécution
 
-- [ ] **P1 — Démarrage Wi-Fi** : le `scan()` complet avant `connect()` coûte 2–3 s à chaque boot.
-  Le rendre optionnel (ne scanner que si la connexion directe échoue) ou mémoriser le canal en NVS.
-- [ ] **P1 — Driver LED** : calculer les quatre `Pulse` une fois dans `new()` plutôt qu'à chaque
-  `set_pixel` ; remplacer `2_u32.pow(i)` par `1u32 << i` ; ne pas réinterroger `counter_clock()`.
+- [x] **Démarrage Wi-Fi** : le `scan()` avant `connect()` a été supprimé (2026-10-04).
+- [x] **Driver LED** : impulsions calculées une fois dans `new()`, `1 << i`, `counter_clock()`
+  lu une fois (2026-10-04).
 - [ ] **P1 — Coexistence BLE / Wi-Fi** : si les deux radios tournent, activer la coexistence
   logicielle (`CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y`, vérifier le nom exact dans `menuconfig` pour
   la v5.3.2) et surveiller le heap libre (`esp_idf_svc::sys::esp_get_free_heap_size()`) dans un log
@@ -408,11 +413,12 @@ Cibles disponibles : `make run` (flash + moniteur), `make flash`, `make monitor`
 
 ### 5.4 Provisioning et persistance
 
-- [ ] **P0 — Stockage NVS** (`EspNvs::new(nvs_partition, "light", true)`) pour SSID/PSK et le
-  dernier état de la lampe. Remplace `cfg.toml` compilé en dur pour le firmware final
-  (`cfg.toml` reste pratique pour `hardware-check`).
-- [ ] **P1 — Séquence de boot** : lire NVS → si identifiants présents, STA + reconnexion
-  automatique ; sinon mode provisioning Improv (§2.4) signalé par une LED bleue clignotante.
+- [x] **Stockage NVS** des identifiants Wi-Fi (`crates/storage`, espace `light`, 2026-10-04).
+  `cfg.toml` ne sert plus que d'identifiants de secours et de mot de passe du point d'accès.
+- [ ] **P1 — Stockage NVS du dernier état de la lampe** (voir §2.2).
+- [x] **Séquence de boot** (2026-10-04, partie Wi-Fi) : NVS → sinon `cfg.toml` → station avec
+  repli point d'accès après 15 s. Reste : reconnexion automatique après coupure (§3, `wifi`),
+  mode provisioning Improv (§2.4) et signalisation par LED.
 - [ ] **P2 — Reset usine** : appui long 5 s sur BOOT (GPIO9) efface la NVS et redémarre (§2.4,
   étape 6).
 

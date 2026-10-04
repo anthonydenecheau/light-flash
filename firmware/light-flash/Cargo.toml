@@ -12,8 +12,12 @@ harness = false # pas de harness libtest en cross-compilation
 anyhow.workspace = true
 log.workspace = true
 esp-idf-svc.workspace = true
-esp-idf-hal.workspace = true
-esp32-nimble.workspace = true
+light-core.workspace = true
+rgb-led.workspace = true
+wifi.workspace = true
+storage.workspace = true
+http-server.workspace = true
+toml-cfg.workspace = true
 
 [build-dependencies]
 embuild.workspace = true

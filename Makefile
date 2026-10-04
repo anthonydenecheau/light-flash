@@ -25,7 +25,7 @@ DIST    := dist
 
 # Crates du workspace, et sous-ensemble testable sur l'hôte (sans dépendance ESP).
 BINS        := light-flash hardware-check
-LIBS        := light-core rgb-led wifi
+LIBS        := light-core rgb-led wifi storage http-server
 HOST_CRATES := light-core
 CRATES      := $(BINS) $(LIBS)
 ifeq ($(filter $(CRATE),$(CRATES)),)

@@ -1,0 +1,14 @@
+[package]
+name = "storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Persistance en NVS : identifiants Wi-Fi de la lampe."
+
+[dependencies]
+anyhow.workspace = true
+esp-idf-svc.workspace = true
+log.workspace = true
+
+[build-dependencies]
+embuild.workspace = true

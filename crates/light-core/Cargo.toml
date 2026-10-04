@@ -7,3 +7,7 @@ description = "Domaine de l'applique : état, commandes, rendu, budget de puissa
 
 [dependencies]
 rgb.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

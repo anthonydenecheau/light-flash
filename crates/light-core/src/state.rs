@@ -33,6 +33,27 @@ impl Effect {
             _ => None,
         }
     }
+
+    /// Nom transporté en JSON.
+    pub fn name(self) -> &'static str {
+        match self {
+            Effect::Solid => "solid",
+            Effect::Breathe => "breathe",
+            Effect::Rainbow => "rainbow",
+        }
+    }
+
+    /// Inverse de [`Effect::name`], insensible à la casse.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "solid" => Some(Effect::Solid),
+            "breathe" => Some(Effect::Breathe),
+            "rainbow" => Some(Effect::Rainbow),
+            _ => None,
+        }
+    }
+
+    pub const ALL: [Effect; 3] = [Effect::Solid, Effect::Breathe, Effect::Rainbow];
 }
 
 /// Commande reçue d'un canal de pilotage.
@@ -154,10 +175,13 @@ mod tests {
     }
 
     #[test]
-    fn effect_round_trips_through_u8() {
-        for e in [Effect::Solid, Effect::Breathe, Effect::Rainbow] {
+    fn effect_round_trips_through_u8_and_name() {
+        for e in Effect::ALL {
             assert_eq!(Effect::from_u8(e.to_u8()), Some(e));
+            assert_eq!(Effect::from_name(e.name()), Some(e));
         }
         assert_eq!(Effect::from_u8(42), None);
+        assert_eq!(Effect::from_name("RAINBOW "), Some(Effect::Rainbow));
+        assert_eq!(Effect::from_name("disco"), None);
     }
 }

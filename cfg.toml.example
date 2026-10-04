@@ -1,3 +1,21 @@
+# Copier ce fichier en `cfg.toml` à la racine du workspace (ignoré par git).
+# `toml-cfg` lit la section portant le nom du package qui compile.
+
+# Firmware principal. Si `wifi_ssid` est renseigné, la lampe rejoint ce réseau au démarrage
+# (identifiants de secours quand la NVS est vide) ; sinon elle ouvre son propre point d'accès
+# « light-flash » et sert la page de configuration sur http://192.168.71.1/.
+[light-flash]
+wifi_ssid = ""
+wifi_psk = ""
+# Mot de passe du point d'accès de secours : 8 caractères minimum, vide = réseau ouvert.
+ap_password = "light-flash"
+
+# Test de la carte : Wi-Fi obligatoire, les valeurs du modèle font échouer le build.
+[hardware-check]
+wifi_ssid = "FBI Surveillance Van"
+wifi_psk = "hunter2"
+
+# Exemple `make example CRATE=wifi EX=wifi`.
 [wifi]
 wifi_ssid = "FBI Surveillance Van"
 wifi_psk = "hunter2"

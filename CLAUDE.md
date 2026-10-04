@@ -31,20 +31,29 @@ d'ESP-IDF, versions communes dans `[workspace.dependencies]`, `Cargo.lock` commi
 
 | Chemin | Type | Rôle |
 |---|---|---|
-| `firmware/light-flash/` | binaire | Firmware principal. Aujourd'hui : serveur BLE GATT (NimBLE via `esp32-nimble`) qui notifie un compteur, **sans pilotage de LED**. |
+| `firmware/light-flash/` | binaire | Firmware principal : tâche lumière (`light_task.rs`, 50 images/s, seule à parler au driver), Wi-Fi station si identifiants (NVS puis `cfg.toml`) sinon point d'accès de secours `light-flash`, serveur HTTP de pilotage. Démarre allumée. |
 | `firmware/hardware-check/` | binaire | Test de la carte : Wi-Fi STA + clignotement LED bleu/vert (rouge si échec Wi-Fi). |
-| `crates/light-core/` | lib | Domaine **sans dépendance ESP** : `LightState`, `LightCommand`, `Effect`, `Renderer`, `Gamma`, `power::limit` (plafond de courant). Testé sur l'hôte. |
-| `crates/rgb-led/` | lib | Driver WS2812 via RMT (API `rmt-legacy` d'`esp-idf-hal`), un seul pixel pour l'instant. |
-| `crates/wifi/` | lib | Helper bloquant de connexion Wi-Fi STA (scan → connect → attente DHCP). |
+| `crates/light-core/` | lib | Domaine **sans dépendance ESP** : `LightState`, `LightCommand`, `Effect`, `Renderer`, `Gamma`, `power::limit` (plafond de courant), `api::{LightView, LightPatch}` (JSON), `SharedState`. Testé sur l'hôte. |
+| `crates/rgb-led/` | lib | Driver WS2812 via RMT (API `rmt-legacy`), N pixels (`set_pixels`), impulsions précalculées. |
+| `crates/wifi/` | lib | Wi-Fi bloquant sur un driver réutilisable : `connect_sta` (15 s max) et `start_access_point`, plus le raccourci `wifi()` pour `hardware-check`. |
+| `crates/storage/` | lib | NVS (espace `light`) : identifiants Wi-Fi. |
+| `crates/http-server/` | lib | `GET /` page de pilotage (HTML embarqué, français), `GET/POST /api/light` (JSON `LightView` / `LightPatch`), `POST /connect` (identifiants Wi-Fi, callback fourni par le firmware). |
 
 Fichiers racine : `Cargo.toml` (membres, versions, profils), `.cargo/config.toml` (cible, `ldproxy`,
 runner `espflash`, `ESP_IDF_VERSION`), `rust-toolchain.toml`, `sdkconfig.defaults` (commun à tous
 les binaires), `cfg.toml.example`, `Makefile`.
 
-Branche distante `origin/feature/connect2Wifi` (non mergée, ancienne arborescence `common/lib/`) :
-AP Wi-Fi + serveur HTTP de saisie des identifiants. **Décision du 2026-10-04 :** le provisioning
-Wi-Fi se fait par **Improv Wi-Fi sur BLE** (`BACKLOG.md` §2.4) ; cette branche n'est qu'un repli
-éventuel et ne doit pas être mergée en l'état.
+**Modèle de concurrence :** `SharedState = Arc<Mutex<LightState>>`. Les producteurs (handlers
+HTTP, plus tard BLE et bouton) font `lock().apply(cmd)` ; la tâche lumière copie l'état à chaque
+image, rend la trame, applique `power::limit` puis `set_pixels`. Le verrou n'est jamais tenu
+pendant l'accès au driver. `LED_COUNT` et `MAX_MILLIAMPS` sont dans `light_task.rs` (1 LED et
+500 mA tant que le ruban n'est pas câblé).
+
+Branche distante `origin/feature/connect2Wifi` : son contenu utile (point d'accès, serveur HTTP)
+a été revu, corrigé et intégré le 2026-10-04 dans `crates/wifi` et `crates/http-server` ; la
+branche peut être supprimée. Le BLE de l'ancien `main.rs` a été retiré en attendant Improv Wi-Fi
+(`BACKLOG.md` §2.4), qui reste le mode de provisioning principal prévu ; le portail HTTP en est
+le repli.
 
 ## Chaîne de compilation
 
@@ -109,10 +118,12 @@ Les seuls tests automatisés sont ceux de `light-core` (`make test`). Les binair
 
 ## Identifiants Wi-Fi (`cfg.toml`)
 
-`toml-cfg` lit `cfg.toml` **à la racine du workspace** (le parent de `target/`), pour
-`hardware-check` comme pour l'exemple `wifi`. Modèle : `cfg.toml.example`. `cfg.toml` est ignoré
-par git. `firmware/hardware-check/build.rs` fait échouer le build si le fichier manque ou contient
-encore les valeurs du modèle, et émet `rerun-if-changed` (pas de `cargo clean` nécessaire).
+`toml-cfg` lit `cfg.toml` **à la racine du workspace** (le parent de `target/`), dans la
+**section portant le nom du package** : `[light-flash]`, `[hardware-check]`, `[wifi]` (exemple).
+Modèle : `cfg.toml.example`. `cfg.toml` est ignoré par git. Pour `light-flash` les champs sont
+facultatifs (identifiants de secours quand la NVS est vide, mot de passe du point d'accès) ;
+`firmware/hardware-check/build.rs` fait échouer le build si le fichier manque ou contient encore
+les valeurs du modèle, et émet `rerun-if-changed` (pas de `cargo clean` nécessaire).
 
 ## Accès au port série
 
@@ -128,8 +139,7 @@ Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puc
 - `.devcontainer/Dockerfile` (ESP-IDF v4.4.4, nightly-2023-02-28) vient de `std-training` et ne
   correspond pas à la configuration réelle (v5.3.2, nightly-2025-01-01) : à réécrire
   (`BACKLOG.md` §5.5).
-- Dans `firmware/light-flash/src/main.rs`, le logger ESP n'est pas initialisé
-  (`EspLogger::initialize_default()` absent) : le code utilise `println!`.
-- Le driver `rgb-led` pilote un seul pixel et n'est pas partageable entre threads : le pilotage
-  depuis BLE/HTTP doit passer par un canal `mpsc` vers une tâche dédiée qui possède le driver
-  (modèle décrit dans `crates/light-core/src/lib.rs` et `BACKLOG.md` §2.2).
+- Les handlers HTTP tournent dans la tâche httpd (pile 10 Ko) : y faire court, ne jamais y
+  toucher au driver LED, ne jamais journaliser un mot de passe.
+- `POST /connect` enregistre en NVS puis redémarre 2 s plus tard ; au boot suivant la lampe tente
+  la station et retombe sur le point d'accès si la connexion échoue (15 s).

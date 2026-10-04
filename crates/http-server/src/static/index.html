@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>light-flash</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; background: #f3f4f6; color: #111; }
+  @media (prefers-color-scheme: dark) { body { background: #16181d; color: #eee; } section { background: #22252c !important; } }
+  main { max-width: 26rem; margin: 0 auto; display: grid; gap: 1rem; }
+  section { background: #fff; border-radius: .75rem; padding: 1rem 1.25rem; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+  h1 { margin: 0 0 .25rem; font-size: 1.4rem; } h2 { margin: 0 0 .75rem; font-size: 1.05rem; }
+  label { display: grid; gap: .3rem; margin-bottom: .9rem; font-size: .95rem; }
+  input, select, button { font: inherit; }
+  input[type=range] { width: 100%; }
+  input[type=color] { width: 100%; height: 2.6rem; border: 1px solid #bbb; border-radius: .4rem; padding: 0; background: none; }
+  input[type=text], input[type=password], select { padding: .55rem; border: 1px solid #bbb; border-radius: .4rem; width: 100%; box-sizing: border-box; background: transparent; color: inherit; }
+  button { padding: .65rem 1rem; border: 0; border-radius: .5rem; background: #2563eb; color: #fff; cursor: pointer; width: 100%; }
+  button.off { background: #6b7280; }
+  .status { font-size: .85rem; opacity: .75; min-height: 1.2em; }
+  .err { color: #dc2626; opacity: 1; }
+</style>
+</head>
+<body>
+<main>
+  <section>
+    <h1>light-flash</h1>
+    <div class="status" id="status">Connexion à la lampe…</div>
+  </section>
+
+  <section>
+    <h2>Lumière</h2>
+    <button id="power">Allumer</button>
+    <br><br>
+    <label>Couleur <input type="color" id="color" value="#ffb464"></label>
+    <label>Luminosité <span id="brightness-value">96</span>/255
+      <input type="range" id="brightness" min="0" max="255" value="96"></label>
+    <label>Effet
+      <select id="effect">
+        <option value="solid">Couleur unie</option>
+        <option value="breathe">Respiration</option>
+        <option value="rainbow">Arc-en-ciel</option>
+      </select></label>
+  </section>
+
+  <section>
+    <h2>Réseau Wi-Fi</h2>
+    <form id="wifi">
+      <label>Nom du réseau (SSID) <input type="text" name="wifi_ssid" maxlength="32" required></label>
+      <label>Mot de passe <input type="password" name="wifi_psk" maxlength="64"></label>
+      <button type="submit">Enregistrer et redémarrer</button>
+    </form>
+    <div class="status" id="wifi-status"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const status = $("status"), power = $("power"), color = $("color"),
+      brightness = $("brightness"), brightnessValue = $("brightness-value"), effect = $("effect");
+
+function show(view) {
+  power.textContent = view.power ? "Éteindre" : "Allumer";
+  power.classList.toggle("off", view.power);
+  color.value = view.color;
+  brightness.value = view.brightness;
+  brightnessValue.textContent = view.brightness;
+  effect.value = view.effect;
+  status.textContent = view.power ? `Allumée, ${view.effect}, ${view.color}` : "Éteinte";
+  status.classList.remove("err");
+}
+
+function fail(message) { status.textContent = message; status.classList.add("err"); }
+
+async function load() {
+  try {
+    const r = await fetch("/api/light");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    show(await r.json());
+  } catch (e) { fail(`Lampe injoignable : ${e.message}`); }
+}
+
+let pending = null;
+async function patch(fields) {
+  // Une seule requête en vol ; les curseurs peuvent en produire des dizaines par seconde.
+  if (pending) { pending.next = fields; return; }
+  pending = { next: null };
+  try {
+    const r = await fetch("/api/light", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) });
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+    show(body);
+  } catch (e) { fail(`Erreur : ${e.message}`); }
+  const next = pending.next; pending = null;
+  if (next) patch(next);
+}
+
+power.addEventListener("click", () => patch({ power: power.classList.contains("off") ? false : true }));
+color.addEventListener("input", () => patch({ color: color.value }));
+brightness.addEventListener("input", () => { brightnessValue.textContent = brightness.value; patch({ brightness: Number(brightness.value) }); });
+effect.addEventListener("change", () => patch({ effect: effect.value }));
+
+$("wifi").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const out = $("wifi-status");
+  const fields = Object.fromEntries(new FormData(e.currentTarget).entries());
+  out.textContent = "Envoi…";
+  try {
+    const r = await fetch("/connect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) });
+    const body = await r.json();
+    out.textContent = r.ok ? body.message : `Refusé : ${body.error}`;
+  } catch (err) { out.textContent = `Erreur : ${err.message}`; }
+});
+
+load();
+</script>
+</body>
+</html>
