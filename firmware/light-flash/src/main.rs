@@ -149,9 +149,11 @@ fn main() -> Result<()> {
     let debug_hooks = cfg!(debug_assertions).then(|| {
         let disconnect = network.disconnect_flag();
         let authorize = provisioning.authorize_flag();
+        let ble_off = provisioning.ble_off_flag();
         DebugHooks {
             wifi_disconnect: Box::new(move || disconnect.store(true, Ordering::Relaxed)),
             improv_authorize: Box::new(move || authorize.store(true, Ordering::Relaxed)),
+            ble_off: Box::new(move || ble_off.store(true, Ordering::Relaxed)),
         }
     });
     let _server = http_server::start(shared, on_wifi_credentials, debug_hooks)?;

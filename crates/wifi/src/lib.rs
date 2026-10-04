@@ -12,6 +12,49 @@ use esp_idf_svc::{
     },
 };
 use log::{info, warn};
+use std::{
+    thread,
+    time::{Duration, Instant},
+};
+
+/// Un réseau vu par le scan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScanEntry {
+    pub ssid: String,
+    /// Puissance reçue en dBm (plus proche de 0 = plus fort).
+    pub rssi: i8,
+    /// Réseau protégé par un mot de passe.
+    pub secured: bool,
+}
+
+/// Scan bloquant (2 à 4 s). Les réseaux cachés sont ignorés, les SSID dédoublonnés (meilleur
+/// signal conservé), triés du plus fort au plus faible et limités à `max`. Fonctionne en station
+/// comme en mode mixte (point d'accès + station) ; pas en point d'accès seul.
+pub fn scan(esp_wifi: &mut EspWifi<'static>, max: usize) -> Result<Vec<ScanEntry>> {
+    let mut entries: Vec<ScanEntry> = Vec::new();
+    for ap in esp_wifi.scan()? {
+        if ap.ssid.is_empty() {
+            continue;
+        }
+        let secured = !matches!(ap.auth_method, None | Some(AuthMethod::None));
+        match entries.iter_mut().find(|e| e.ssid == ap.ssid.as_str()) {
+            Some(e) if ap.signal_strength > e.rssi => {
+                e.rssi = ap.signal_strength;
+                e.secured = secured;
+            }
+            Some(_) => {}
+            None => entries.push(ScanEntry {
+                ssid: ap.ssid.to_string(),
+                rssi: ap.signal_strength,
+                secured,
+            }),
+        }
+    }
+    entries.sort_by(|a, b| b.rssi.cmp(&a.rssi));
+    entries.truncate(max);
+    info!("scan Wi-Fi : {} réseau(x)", entries.len());
+    Ok(entries)
+}
 
 /// Paramètres d'un point d'accès.
 pub struct AccessPoint<'a> {
@@ -85,7 +128,8 @@ pub fn connect_sta(
 }
 
 /// Démarre un point d'accès et attend que son interface soit prête
-/// (adresse ESP-IDF par défaut : 192.168.71.1).
+/// (adresse ESP-IDF par défaut : 192.168.71.1). Le mode est mixte (point d'accès + station
+/// inactive) pour que le scan des réseaux reste possible pendant le provisioning.
 pub fn start_access_point(
     esp_wifi: &mut EspWifi<'static>,
     sysloop: EspSystemEventLoop,
@@ -104,22 +148,32 @@ pub fn start_access_point(
     if wifi.is_started()? {
         wifi.stop()?;
     }
-    wifi.set_configuration(&Configuration::AccessPoint(AccessPointConfiguration {
-        ssid: ap
-            .ssid
-            .try_into()
-            .map_err(|_| anyhow!("SSID du point d'accès trop long (32 octets maximum)"))?,
-        password: ap
-            .password
-            .try_into()
-            .map_err(|_| anyhow!("mot de passe du point d'accès trop long (64 octets maximum)"))?,
-        auth_method,
-        channel: ap.channel,
-        max_connections: ap.max_connections,
-        ..Default::default()
-    }))?;
+    wifi.set_configuration(&Configuration::Mixed(
+        ClientConfiguration::default(),
+        AccessPointConfiguration {
+            ssid: ap
+                .ssid
+                .try_into()
+                .map_err(|_| anyhow!("SSID du point d'accès trop long (32 octets maximum)"))?,
+            password: ap.password.try_into().map_err(|_| {
+                anyhow!("mot de passe du point d'accès trop long (64 octets maximum)")
+            })?,
+            auth_method,
+            channel: ap.channel,
+            max_connections: ap.max_connections,
+            ..Default::default()
+        },
+    ))?;
     wifi.start()?;
-    wifi.wait_netif_up()?;
+    // En mode mixte, `wait_netif_up` attendrait aussi la station : on attend l'interface du
+    // point d'accès seule.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !wifi.wifi().ap_netif().is_up()? {
+        if Instant::now() > deadline {
+            bail!("point d'accès : interface non prête après 10 s");
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
     let ip = wifi.wifi().ap_netif().get_ip_info()?;
     info!("point d'accès « {} » démarré, adresse {}", ap.ssid, ip.ip);
     Ok(ip)

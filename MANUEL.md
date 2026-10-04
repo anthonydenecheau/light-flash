@@ -31,8 +31,9 @@ Version du 2026-10-04. Ce manuel s'enrichira de deux chapitres : l'utilisation d
 2. Au bout de deux secondes, la lampe s'allume en blanc chaud. Si elle a déjà servi, elle revient
    dans l'état où elle était avant d'être débranchée, allumée ou éteinte.
 3. La lampe est prête à être configurée : elle est visible en Bluetooth sous le nom
-   **light-flash** et, tant qu'aucun Wi-Fi n'est enregistré, elle diffuse son propre réseau Wi-Fi
-   de secours, lui aussi nommé **light-flash**.
+   **light-flash** pendant cinq minutes après l'allumage (un appui bref sur **BOOT** la rend de
+   nouveau visible à tout moment) et, tant qu'aucun Wi-Fi n'est enregistré, elle diffuse son
+   propre réseau Wi-Fi de secours, lui aussi nommé **light-flash**.
 
 ### 1.3 Connexion au Wi-Fi de la maison
 
@@ -48,7 +49,8 @@ Deux méthodes, au choix. La première est la plus simple.
 3. L'application vous demande d'autoriser la configuration : **appuyez brièvement sur BOOT**.
    La lampe se met à **respirer en bleu** pendant une minute. Passé ce délai, il faut appuyer de
    nouveau.
-4. Saisissez le nom de votre réseau Wi-Fi et son mot de passe, puis validez.
+4. Choisissez votre réseau Wi-Fi dans la liste que la lampe propose (les réseaux à portée, du
+   plus fort au plus faible), saisissez son mot de passe, puis validez.
 5. La lampe **clignote en bleu** pendant qu'elle se connecte, quelques secondes.
 6. **Vert** : c'est réussi. Le réseau est mémorisé, et l'application vous propose d'ouvrir la page
    de la lampe. **Rouge** : le réseau est introuvable ou le mot de passe est faux ; la lampe
@@ -95,7 +97,7 @@ l'écran d'accueil* sur iPhone, menu *⋮, Ajouter à l'écran d'accueil* dans C
 
 | Action | Effet |
 |---|---|
-| **BOOT**, appui bref | autorise la configuration par Bluetooth pendant une minute |
+| **BOOT**, appui bref | rend la lampe visible en Bluetooth pendant cinq minutes et autorise la configuration pendant une minute |
 | **BOOT**, appui long de 5 secondes | efface le réseau Wi-Fi et les réglages enregistrés, puis redémarre (la lampe passe au rouge un instant) |
 | **RESET** | redémarre la lampe sans rien effacer |
 

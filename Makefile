@@ -49,7 +49,8 @@ ifneq ($(PORT),)
 PORT_FLAG := --port $(PORT)
 endif
 
-ELF := target/$(TARGET)/$(PROFILE)/$(CRATE)
+# ELF à flasher : le binaire de la crate, ou son exemple si EX est défini.
+ELF := $(if $(EX),target/$(TARGET)/$(PROFILE)/examples/$(EX),target/$(TARGET)/$(PROFILE)/$(CRATE))
 
 # Accès au port série : si l'utilisateur vient d'être ajouté au groupe dialout (make setup-serial)
 # sans s'être reconnecté, `sg dialout -c` donne l'accès tout de suite.
@@ -143,10 +144,15 @@ clean: ## Nettoie target/ et dist/
 	rm -rf $(DIST)
 
 # ---- Flash / moniteur ------------------------------------------------------
-run: ## Compile, flashe et ouvre le moniteur série (= cargo run ; SECS=30 pour le borner)
-	$(SERIAL_SH) '$(TIMEOUT)cargo run -p $(CRATE) $(CARGO_FLAGS) -- $(PORT_FLAG) $(NONINT)$(TIMEOUT_OK)'
+run: ## Compile, flashe et ouvre le moniteur série (SECS=30 borne le moniteur seulement, jamais le flash)
+ifeq ($(SECS),)
+	$(SERIAL_SH) 'cargo run -p $(CRATE) $(CARGO_FLAGS) -- $(PORT_FLAG)'
+else
+	$(MAKE) flash CRATE=$(CRATE) RELEASE=$(RELEASE) PORT=$(PORT)
+	$(MAKE) monitor CRATE=$(CRATE) RELEASE=$(RELEASE) PORT=$(PORT) SECS=$(SECS)
+endif
 
-flash: build ## Flashe l'ELF sans ouvrir le moniteur
+flash: build ## Flashe l'ELF sans ouvrir le moniteur (jamais borné : une écriture interrompue rend la carte non amorçable)
 	$(SERIAL_SH) 'espflash flash --chip $(CHIP) $(PORT_FLAG) $(ELF)'
 
 monitor: ## Moniteur série seul (SECS=30 pour le borner)
@@ -155,9 +161,15 @@ monitor: ## Moniteur série seul (SECS=30 pour le borner)
 erase: ## Efface toute la flash (après changement de table de partitions)
 	$(SERIAL_SH) 'espflash erase-flash $(PORT_FLAG)'
 
-example: ## Lance un exemple d'une lib : make example CRATE=rgb-led EX=ws2812
+example: ## Lance un exemple d'une lib : make example CRATE=rgb-led EX=ws2812 [SECS=30]
 	@test -n "$(EX)" || { echo "EX=<nom de l'exemple> requis (ex. make example CRATE=rgb-led EX=ws2812)"; exit 1; }
-	$(SERIAL_SH) '$(TIMEOUT)cargo run -p $(CRATE) --example $(EX) $(CARGO_FLAGS) -- $(PORT_FLAG) $(NONINT)$(TIMEOUT_OK)'
+ifeq ($(SECS),)
+	$(SERIAL_SH) 'cargo run -p $(CRATE) --example $(EX) $(CARGO_FLAGS) -- $(PORT_FLAG)'
+else
+	cargo build -p $(CRATE) --example $(EX) $(CARGO_FLAGS)
+	$(SERIAL_SH) 'espflash flash --chip $(CHIP) $(PORT_FLAG) $(ELF)'
+	$(MAKE) monitor CRATE=$(CRATE) EX=$(EX) RELEASE=$(RELEASE) PORT=$(PORT) SECS=$(SECS)
+endif
 
 image: build ## Image flashable autonome (bootloader + partitions + app) dans dist/
 	mkdir -p $(DIST)

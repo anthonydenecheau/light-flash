@@ -33,6 +33,8 @@ pub struct DebugHooks {
     pub wifi_disconnect: Box<dyn Fn() + Send + Sync + 'static>,
     /// `POST /api/debug/improv-authorize` : simule un appui court sur BOOT (autorisation Improv).
     pub improv_authorize: Box<dyn Fn() + Send + Sync + 'static>,
+    /// `POST /api/debug/ble-off` : coupe le BLE tout de suite (test du cycle arrêt / rallumage).
+    pub ble_off: Box<dyn Fn() + Send + Sync + 'static>,
 }
 
 #[derive(Deserialize)]
@@ -127,6 +129,7 @@ pub fn start(
         let DebugHooks {
             wifi_disconnect,
             improv_authorize,
+            ble_off,
         } = hooks;
         server.fn_handler::<anyhow::Error, _>(
             "/api/debug/wifi-disconnect",
@@ -146,6 +149,11 @@ pub fn start(
                 write_json(req, 200, br#"{"ok":true}"#)
             },
         )?;
+        server.fn_handler::<anyhow::Error, _>("/api/debug/ble-off", Method::Post, move |req| {
+            warn!("debug : arrêt du BLE demandé");
+            ble_off();
+            write_json(req, 200, br#"{"ok":true}"#)
+        })?;
         info!("points d'entrée de debug HTTP actifs");
     }
 

@@ -231,17 +231,47 @@ bit 0 identify, bit 1 device info, bit 2 scan, bit 3 hostname, bit 4 device name
   enregistrement NVS, URL renvoyées : `http://light-flash.local/` et `http://<ip>/`.
 - [x] `network.rs` : canal de commandes `Connect` ; en cas de succès le thread réseau adopte les
   identifiants (`Policy::set_has_credentials`), sinon il relance le point d'accès s'il y était.
-- [x] Capacités annoncées : identify + device info (`0x03`). Scan Wi-Fi (`0x04`) non implémenté.
+- [x] Capacités annoncées : identify, device info, scan Wi-Fi (`0x07`).
 - [x] Sécurité : autorisation par BOOT obligatoire (`require_authorization: true`), le mot de passe
   n'est jamais journalisé. Pas d'appairage BLE (Improv ne le prévoit pas).
 - [x] Debug : `POST /api/debug/improv-authorize` simule l'appui sur BOOT (build debug seulement).
-- [ ] **P2 — Scan Wi-Fi** (`0x04`) pour que l'appli propose la liste des réseaux ; demande un
-  `scan()` via le thread réseau et le résultat en triplets SSID, RSSI, sécurité.
-- [ ] **P2 — Arrêter l'advertising** quelques minutes après un provisioning réussi (la spec dit
-  « the Improv service is stopped ») pour économiser la radio ; aujourd'hui il reste actif et
-  seul BOOT rouvre l'autorisation.
+- [x] **Scan Wi-Fi** (`0x04`, 2026-10-04) : commande `Scan` du thread réseau (`wifi::scan`,
+  dédoublonnage par SSID, tri par signal, 20 réseaux maximum), un résultat RPC par réseau
+  (SSID, RSSI, YES/NO) puis un résultat vide ; le point d'accès de secours tourne en mode mixte
+  (point d'accès + station inactive) car le scan exige une interface station.
+- [x] **BLE arrêté quand il ne sert pas** (2026-10-04) : `BLEDevice::deinit` 5 min après
+  l'allumage, le dernier appui BOOT ou le dernier provisioning ; un appui BOOT relance la pile
+  (`BLEDevice::init` puis `take`, services conservés par esp32-nimble). Vérifié : tas libre de
+  56 Ko BLE actif à 107 Ko BLE coupé ; après rallumage, device info, scan et provisioning complet
+  fonctionnent. Premier essai avec `take()` seul : erreur 0x1E puis plantage dans
+  `ble_gatts_reset`, corrigé par l'appel explicite à `init()`.
 - [ ] **P3 — Coexistence** : avec BLE actif, l'association Wi-Fi au boot prend parfois plus de
   20 s au lieu de 4 ; `CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y` est déjà actif, à surveiller.
+- [ ] **P1 — Accès aux fonctions BOOT et RESET pour l'utilisateur final** (question du
+  2026-10-04). Sur l'applique finale, les boutons de la carte seront dans le boîtier. Décision à
+  prendre, recommandation : (a) un **bouton poussoir sur l'applique**, câblé entre GPIO9 et la
+  masse (la carte a déjà la résistance de rappel), qui reprend les deux gestes : appui bref =
+  visible en Bluetooth + autorisation, appui long = réinitialisation ; (b) dans la **page**, trois
+  actions une fois sur le réseau : « Rendre visible en Bluetooth 5 min », « Oublier le Wi-Fi »
+  (avec confirmation) et « Redémarrer » ; (c) RESET n'a pas besoin d'être accessible, débrancher
+  suffit. Sans bouton accessible, alternative : fenêtre d'autorisation automatique de 3 min après
+  la mise sous tension tant que la lampe n'est pas provisionnée (`require_authorization`
+  conditionnel) ; moins sûr, mais c'est l'usage courant des objets connectés.
+- [ ] **P1 — Nommer chaque applique** (question du 2026-10-04, plusieurs lampes). Aujourd'hui le
+  nom `light-flash` est fixe partout (BLE, mDNS, DHCP, point d'accès) : deux lampes entreraient en
+  conflit (mDNS renomme en `light-flash-2`, le nom DHCP devient ambigu). À faire : (1) suffixe
+  unique par défaut dérivé de l'adresse MAC (`light-flash-df60`) ; (2) nom choisi par l'utilisateur
+  (« salon 1 ») stocké en NVS, modifiable depuis la page et par la commande Improv Device name
+  (`0x06`), normalisé pour l'hôte mDNS et DHCP (`salon-1`, minuscules, lettres, chiffres, tirets,
+  `esp_netif_set_hostname` à chaud) et affiché tel quel dans le titre de la page et le nom BLE.
+- [ ] **P2 — Piloter plusieurs appliques ensemble** (question du 2026-10-04). Chaque lampe a sa
+  page et ses réglages ; rien ne les relie. Options : (a) **Home Assistant** : groupe de lumières,
+  zéro code côté lampe, c'est la voie naturelle pour qui a une domotique ; (b) **groupe dans la
+  page** : la lampe découvre ses semblables par mDNS (`_http._tcp`), les expose sur `/api/peers`,
+  et la page envoie la même commande à toutes (nécessite les en-têtes CORS sur l'API) ; (c)
+  synchronisation lampe à lampe (une « maîtresse » relaie ses changements aux autres par HTTP ou
+  ESP-NOW). Recommandation : (a) documenté, puis (b) pour l'usage sans domotique ; (c) seulement
+  si (b) ne suffit pas.
 
 **Tests**
 
@@ -384,9 +414,9 @@ intégration dans `master` sous `crates/http-server` et `crates/wifi`. La branch
 - [ ] **P1 — Mémoire avec BLE actif** : 40 Ko de tas libre le 2026-10-04 avec NimBLE par défaut
   (173 Ko sans BLE). Première passe de réduction dans `sdkconfig.defaults` (une connexion, rôles
   central/observateur coupés, tampons NimBLE et Wi-Fi réduits, pile principale 12 Ko) : 58 Ko
-  libres après 60 s, BLE et Wi-Fi vérifiés. Pistes suivantes : couper le BLE quelques minutes après un provisioning
-  réussi (`BLEDevice::deinit`) et le rallumer sur appui BOOT ; réduire les piles des threads
-  (`provision` 16 Ko, `network` 12 Ko) après mesure du pic d'utilisation.
+  libres après 60 s, BLE et Wi-Fi vérifiés. Seconde passe (2026-10-04) : BLE arrêté 5 min après
+  l'allumage ou le dernier appui BOOT (§2.4), ce qui rend sa mémoire en exploitation normale.
+  Reste : réduire les piles des threads (`provision` 16 Ko, `network` 12 Ko) après mesure du pic.
 - [x] **Usure de la flash** : écriture différée de 2 s et seulement si l'état change
   (`SaveScheduler`, 2026-10-04).
 - [x] **Rendu couleur** : correction gamma 2,2 (table de 256 entrées, `light_core::color::Gamma`)

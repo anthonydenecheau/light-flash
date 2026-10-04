@@ -6,7 +6,9 @@
 pub mod packet;
 pub mod state;
 
-pub use packet::{checksum, encode_result, parse_command, Command, DeviceInfo};
+pub use packet::{
+    checksum, encode_result, encode_scan_end, encode_scan_entry, parse_command, Command, DeviceInfo,
+};
 pub use state::{Error, Machine, Outcome, State};
 
 /// UUID 128 bits du service et des caractéristiques (chaînes pour `uuid128!`).

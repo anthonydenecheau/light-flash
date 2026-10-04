@@ -41,7 +41,7 @@ d'ESP-IDF, versions communes dans `[workspace.dependencies]`, `Cargo.lock` commi
 | `crates/rgb-led/` | lib | Driver WS2812 via RMT (API `rmt-legacy`), N pixels (`set_pixels`), impulsions précalculées. |
 | `crates/wifi/` | lib | Wi-Fi bloquant sur un driver réutilisable : `connect_sta` (15 s max) et `start_access_point`, plus le raccourci `wifi()` pour `hardware-check`. |
 | `crates/storage/` | lib | NVS (espace `light`) : identifiants Wi-Fi et dernier état de la lampe (`light_state`, 7 octets versionnés) ; `SharedStorage` + `storage::lock`. |
-| `crates/http-server/` | lib | `GET /` page de pilotage (HTML embarqué, français), `GET/POST /api/light` (JSON `LightView` / `LightPatch`), `POST /connect` (identifiants Wi-Fi, callback fourni par le firmware), en build debug seulement (`DebugHooks`) : `POST /api/debug/wifi-disconnect` et `POST /api/debug/improv-authorize`. |
+| `crates/http-server/` | lib | `GET /` page de pilotage (HTML embarqué, français), `GET/POST /api/light` (JSON `LightView` / `LightPatch`), `POST /connect` (identifiants Wi-Fi, callback fourni par le firmware), en build debug seulement (`DebugHooks`) : `POST /api/debug/wifi-disconnect`, `/api/debug/improv-authorize`, `/api/debug/ble-off`. |
 
 Fichiers racine : `Cargo.toml` (membres, versions, profils), `.cargo/config.toml` (cible, `ldproxy`,
 runner `espflash`, `ESP_IDF_VERSION`), `rust-toolchain.toml`, `sdkconfig.defaults` (commun à tous
@@ -121,7 +121,11 @@ racine, `build-all`, `check` et `clippy` excluent `hardware-check`.
 
 Depuis une session sans terminal (Claude Code, CI), **toujours passer `SECS=<n>`** aux cibles
 `run`, `example` et `monitor` : sans cela `espflash monitor` échoue (« Failed to initialize input
-reader ») ou ne rend jamais la main. Si l'utilisateur vient d'être ajouté au groupe `dialout` sans
+reader ») ou ne rend jamais la main. `SECS` ne borne que le moniteur : avec `SECS`, `run` et
+`example` enchaînent un flash non borné puis un moniteur borné. **Ne jamais mettre un `timeout`
+autour d'un flash** : l'application fait 1,8 Mo et son écriture prend plus de 15 s ; interrompue,
+la carte boucle sur « Factory app partition is not bootable » jusqu'au prochain `make flash`
+(constaté le 2026-10-04). Si l'utilisateur vient d'être ajouté au groupe `dialout` sans
 reconnexion, le Makefile passe automatiquement par `sg dialout -c`.
 
 Les seuls tests automatisés sont ceux de `light-core` (`make test`). Les binaires ont
@@ -168,7 +172,15 @@ Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puc
   et `light-flash` / `light-flash.home` via le DNS de la box (nom DHCP). Vérifiés le 2026-10-04
   depuis le PC et une Livebox.
 - BLE : seul le thread `provision` touche à NimBLE ; les callbacks `on_write` ne font que
-  relayer les paquets sur un canal. Tester sans téléphone : client Python `bleak` (voir
+  relayer les paquets sur un canal. Le GATT est créé une fois ; la pile est arrêtée
+  (`BLEDevice::deinit`) 5 min après l'allumage, le dernier appui BOOT ou le dernier provisioning
+  pour rendre sa mémoire, et relancée au prochain appui par `BLEDevice::init()` **puis**
+  `take()` : `take()` seul ne réinitialise pas (initialisation paresseuse unique) et le premier
+  `advertising.start()` plante alors dans `ble_gatts_reset` (constaté le 2026-10-04). esp32-nimble
+  ré-enregistre les services au redémarrage, le GATT n'est créé qu'une fois. Le scan Wi-Fi
+  d'Improv passe par le thread réseau ; le point d'accès de secours tourne en mode mixte pour que
+  le scan reste possible. Hooks debug : `/api/debug/ble-off` coupe le BLE tout de suite,
+  `/api/debug/improv-authorize` simule l'appui BOOT (et rallume le BLE). Tester sans téléphone : client Python `bleak` (voir
   `BACKLOG.md` §2.4), `rfkill unblock bluetooth` sur le PC puis `rfkill block` après, et
   `curl -X POST http://<ip>/api/debug/improv-authorize` à la place de l'appui sur BOOT.
 - Réseau : seul le thread `network` touche au driver Wi-Fi. La logique de décision est dans

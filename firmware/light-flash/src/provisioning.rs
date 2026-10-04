@@ -1,19 +1,24 @@
 //! Provisioning Wi-Fi par Improv sur BLE (protocole dans `crates/improv`). Ce thread possède la
-//! pile BLE, le bouton BOOT et la machine à états ; il demande les connexions au thread réseau et
-//! enregistre les identifiants acceptés. Un appui long sur BOOT (5 s) réinitialise la lampe.
+//! pile BLE, le bouton BOOT et la machine à états ; il demande connexions et scans au thread
+//! réseau et enregistre les identifiants acceptés. Un appui long sur BOOT (5 s) réinitialise la
+//! lampe. Le BLE est arrêté cinq minutes après l'allumage, le dernier appui sur BOOT ou le dernier
+//! provisioning, pour rendre sa mémoire ; un appui sur BOOT le rallume.
 
 use anyhow::{anyhow, Result};
 use esp32_nimble::{
     utilities::{mutex::Mutex as BleMutex, BleUuid},
     uuid128, BLEAdvertisementData, BLEAdvertising, BLECharacteristic, BLEDevice, NimbleProperties,
 };
-use esp_idf_svc::hal::{
-    gpio::{Gpio9, Input, PinDriver},
-    reset,
+use esp_idf_svc::{
+    hal::{
+        gpio::{Gpio9, Input, PinDriver},
+        reset,
+    },
+    sys::esp_get_free_heap_size,
 };
 use improv::{
-    advertisement_service_data, capability, DeviceInfo, Error, Machine, Outcome, State,
-    SERVICE_DATA_UUID16,
+    advertisement_service_data, capability, encode_scan_end, encode_scan_entry, DeviceInfo, Error,
+    Machine, Outcome, State, SERVICE_DATA_UUID16,
 };
 use light_core::{
     button::{ButtonTracker, Press},
@@ -34,7 +39,12 @@ use storage::{SharedStorage, WifiCredentials};
 const POLL: Duration = Duration::from_millis(50);
 /// NimBLE est initialisé depuis ce thread : pile confortable.
 const STACK_SIZE: usize = 16 * 1024;
-const CAPABILITIES: u8 = capability::IDENTIFY | capability::DEVICE_INFO;
+const CAPABILITIES: u8 = capability::IDENTIFY | capability::DEVICE_INFO | capability::SCAN_WIFI;
+/// Le BLE reste actif ce temps après l'allumage, un appui sur BOOT ou un provisioning, puis est
+/// arrêté pour rendre sa mémoire. Un appui sur BOOT le rallume.
+const BLE_WINDOW_MS: u64 = 5 * 60 * 1000;
+/// Pause entre deux notifications de résultat de scan, pour ne pas saturer le client.
+const SCAN_NOTIFY_GAP: Duration = Duration::from_millis(30);
 
 pub struct Config {
     pub device_name: &'static str,
@@ -44,15 +54,20 @@ pub struct Config {
     pub require_authorization: bool,
 }
 
-/// Poignée pour les autres threads (debug HTTP) : simuler un appui court sur BOOT.
+/// Poignée pour les autres threads (debug HTTP) : simuler un appui court sur BOOT, couper le BLE.
 #[derive(Clone, Default)]
 pub struct ProvisioningHandle {
     authorize_request: Arc<AtomicBool>,
+    ble_off_request: Arc<AtomicBool>,
 }
 
 impl ProvisioningHandle {
     pub fn authorize_flag(&self) -> Arc<AtomicBool> {
         self.authorize_request.clone()
+    }
+
+    pub fn ble_off_flag(&self) -> Arc<AtomicBool> {
+        self.ble_off_request.clone()
     }
 }
 
@@ -64,17 +79,25 @@ pub fn spawn(
     config: Config,
 ) -> Result<ProvisioningHandle> {
     let handle = ProvisioningHandle::default();
-    let flag = handle.authorize_request.clone();
+    let authorize = handle.authorize_request.clone();
+    let ble_off = handle.ble_off_request.clone();
     thread::Builder::new()
         .name("provision".into())
         .stack_size(STACK_SIZE)
-        .spawn(move || run(button, storage, network, indication, config, flag))?;
+        .spawn(move || {
+            run(
+                button, storage, network, indication, config, authorize, ble_off,
+            )
+        })?;
     Ok(handle)
 }
 
-/// Caractéristiques GATT et advertising du service Improv.
+/// Caractéristiques GATT et advertising du service Improv. Le GATT est créé une seule fois ;
+/// la pile NimBLE peut ensuite être arrêtée et relancée (`disable` / `enable`), esp32-nimble
+/// ré-enregistre les services au redémarrage.
 struct Ble {
     name: &'static str,
+    enabled: bool,
     advertising: &'static BleMutex<BLEAdvertising>,
     state: Arc<BleMutex<BLECharacteristic>>,
     error: Arc<BleMutex<BLECharacteristic>>,
@@ -124,6 +147,7 @@ impl Ble {
 
         Ok(Self {
             name,
+            enabled: true,
             advertising: device.get_advertising(),
             state,
             error,
@@ -132,18 +156,58 @@ impl Ble {
         })
     }
 
+    /// Relance la pile BLE après `disable` ; l'appelant republie l'état, ce qui relance
+    /// l'advertising.
+    fn enable(&mut self) {
+        if self.enabled {
+            return;
+        }
+        // `take()` seul ne suffit pas : l'initialisation paresseuse ne s'exécute qu'une fois,
+        // `init()` relance explicitement la pile après un `deinit()`.
+        BLEDevice::init();
+        BLEDevice::take();
+        if let Err(e) = BLEDevice::set_device_name(self.name) {
+            warn!("nom BLE : {e:?}");
+        }
+        self.enabled = true;
+        info!("BLE relancé");
+    }
+
+    /// Arrête l'advertising et la pile NimBLE pour rendre leur mémoire.
+    fn disable(&mut self) {
+        if !self.enabled {
+            return;
+        }
+        let _ = self.advertising.lock().stop();
+        match BLEDevice::deinit() {
+            // SAFETY: lecture d'un compteur ESP-IDF, sans argument ni effet de bord.
+            Ok(()) => info!("BLE arrêté, tas libre : {} octets", unsafe {
+                esp_get_free_heap_size()
+            }),
+            Err(e) => warn!("arrêt du BLE : {e}"),
+        }
+        self.enabled = false;
+    }
+
     fn publish_state(&self, state: State, error: Error) {
+        if !self.enabled {
+            return;
+        }
         self.state.lock().set_value(&[state as u8]).notify();
         self.error.lock().set_value(&[error as u8]).notify();
         self.advertise(state);
     }
 
     fn publish_error(&self, error: Error) {
-        self.error.lock().set_value(&[error as u8]).notify();
+        if self.enabled {
+            self.error.lock().set_value(&[error as u8]).notify();
+        }
     }
 
     fn publish_result(&self, packet: &[u8]) {
-        self.result.lock().set_value(packet).notify();
+        if self.enabled {
+            self.result.lock().set_value(packet).notify();
+        }
     }
 
     /// (Re)démarre l'advertising avec l'état courant dans le *service data* ; le nom passe dans
@@ -174,8 +238,9 @@ fn run(
     indication: SharedIndication,
     config: Config,
     authorize_request: Arc<AtomicBool>,
+    ble_off_request: Arc<AtomicBool>,
 ) {
-    let ble = match Ble::setup(config.device_name) {
+    let mut ble = match Ble::setup(config.device_name) {
         Ok(ble) => ble,
         Err(e) => {
             error!("BLE indisponible, provisioning Improv désactivé : {e}");
@@ -196,6 +261,7 @@ fn run(
     let mut indication_until: Option<u64> = None;
     let start = Instant::now();
     let now_ms = || start.elapsed().as_millis() as u64;
+    let mut ble_until = BLE_WINDOW_MS;
 
     let show = |what: Option<Indication>| {
         *indication.lock().unwrap_or_else(|p| p.into_inner()) = what;
@@ -208,15 +274,17 @@ fn run(
 
     ble.publish_state(machine.state(), machine.error());
     info!(
-        "Improv BLE actif : « {} », autorisation par BOOT : {}",
-        config.device_name, config.require_authorization
+        "Improv BLE actif : « {} », autorisation par BOOT : {}, arrêt après {} min sans appui",
+        config.device_name,
+        config.require_authorization,
+        BLE_WINDOW_MS / 60_000
     );
 
     loop {
         thread::sleep(POLL);
         let now = now_ms();
 
-        // Bouton BOOT : appui court = autorisation, appui long = réinitialisation d'usine.
+        // Bouton BOOT : appui court = autorisation (et BLE), appui long = réinitialisation d'usine.
         let press = tracker.update(button.is_low(), now);
         let authorize = press == Press::Short || authorize_request.swap(false, Ordering::Relaxed);
         if press == Press::Long {
@@ -227,11 +295,23 @@ fn run(
             thread::sleep(Duration::from_millis(500));
             reset::restart();
         }
-        if authorize && machine.authorize(now) {
-            info!("Improv : autorisation accordée pour 60 s");
-            ble.publish_state(machine.state(), machine.error());
-            indication_until = None;
-            show(indication_for(machine.state()));
+        if authorize {
+            ble_until = now + BLE_WINDOW_MS;
+            if !ble.enabled {
+                ble.enable();
+                ble.publish_state(machine.state(), machine.error());
+            }
+            if machine.authorize(now) {
+                info!("Improv : autorisation accordée pour 60 s");
+                ble.publish_state(machine.state(), machine.error());
+                indication_until = None;
+                show(indication_for(machine.state()));
+            }
+        }
+
+        let ble_off = ble_off_request.swap(false, Ordering::Relaxed);
+        if ble.enabled && (ble_off || now >= ble_until) && machine.state() != State::Provisioning {
+            ble.disable();
         }
 
         if machine.tick(now) {
@@ -257,6 +337,19 @@ fn run(
                     indication_until = Some(now + 2_000);
                 }
                 Outcome::Reply(bytes) => ble.publish_result(&bytes),
+                Outcome::ScanWifi => {
+                    info!("Improv : scan des réseaux demandé");
+                    match network.scan() {
+                        Ok(entries) => {
+                            for e in &entries {
+                                ble.publish_result(&encode_scan_entry(&e.ssid, e.rssi, e.secured));
+                                thread::sleep(SCAN_NOTIFY_GAP);
+                            }
+                        }
+                        Err(e) => warn!("Improv : scan impossible : {e}"),
+                    }
+                    ble.publish_result(&encode_scan_end());
+                }
                 Outcome::StartProvisioning { ssid, password } => {
                     info!("Improv : identifiants reçus pour « {ssid} »");
                     ble.publish_state(State::Provisioning, Error::None);
@@ -278,6 +371,7 @@ fn run(
                             ble.publish_state(machine.state(), machine.error());
                             info!("Improv : provisionnée, {}", urls[1]);
                             show(Some(Indication::Success));
+                            ble_until = now_ms() + BLE_WINDOW_MS;
                         }
                         Err(e) => {
                             warn!("Improv : connexion impossible : {e}");

@@ -17,6 +17,7 @@ pub enum Command {
     WifiSettings { ssid: String, password: String },
     Identify,
     DeviceInfo,
+    ScanWifi,
 }
 
 /// Réponse à la commande Device info.
@@ -58,6 +59,7 @@ pub fn parse_command(packet: &[u8]) -> Result<Command, Error> {
         CMD_WIFI_SETTINGS => parse_wifi_settings(data),
         CMD_IDENTIFY => Ok(Command::Identify),
         CMD_DEVICE_INFO => Ok(Command::DeviceInfo),
+        CMD_SCAN_WIFI => Ok(Command::ScanWifi),
         _ => Err(Error::UnknownCommand),
     }
 }
@@ -84,6 +86,19 @@ fn take_string(data: &[u8]) -> Result<(String, &[u8]), Error> {
     let (s, rest) = rest.split_at(len);
     let s = core::str::from_utf8(s).map_err(|_| Error::InvalidRpcPacket)?;
     Ok((s.to_owned(), rest))
+}
+
+/// Un réseau trouvé par le scan : un résultat par réseau, `[ssid, rssi décimal, "YES"/"NO"]`.
+pub fn encode_scan_entry(ssid: &str, rssi: i8, secured: bool) -> Vec<u8> {
+    encode_result(
+        CMD_SCAN_WIFI,
+        &[ssid, &rssi.to_string(), if secured { "YES" } else { "NO" }],
+    )
+}
+
+/// Fin de la liste des réseaux : un résultat sans donnée.
+pub fn encode_scan_end() -> Vec<u8> {
+    encode_result(CMD_SCAN_WIFI, &[])
 }
 
 /// Encode un résultat RPC : `[commande][longueur][chaînes préfixées…][checksum]`.
@@ -160,6 +175,24 @@ mod tests {
             Ok(Command::DeviceInfo)
         );
         assert_eq!(parse_command(&[0x02, 0x00, 0x02]), Ok(Command::Identify));
+    }
+
+    #[test]
+    fn parses_scan_and_encodes_scan_results() {
+        assert_eq!(
+            parse_command(&packet(CMD_SCAN_WIFI, &[])),
+            Ok(Command::ScanWifi)
+        );
+        let e = encode_scan_entry("Box", -61, true);
+        assert_eq!(e[0], CMD_SCAN_WIFI);
+        let expected: &[u8] = &[
+            3, b'B', b'o', b'x', 3, b'-', b'6', b'1', 3, b'Y', b'E', b'S',
+        ];
+        assert_eq!(&e[2..e.len() - 1], expected);
+        assert!(encode_scan_entry("Libre", -80, false)
+            .windows(2)
+            .any(|w| w == b"NO"));
+        assert_eq!(encode_scan_end(), vec![CMD_SCAN_WIFI, 0, CMD_SCAN_WIFI]);
     }
 
     #[test]

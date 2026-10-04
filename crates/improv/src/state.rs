@@ -34,6 +34,8 @@ pub enum Outcome {
     Identify,
     /// Résultat RPC à publier (Device info).
     Reply(Vec<u8>),
+    /// Scanner les réseaux et publier un résultat par réseau, puis un résultat vide.
+    ScanWifi,
 }
 
 #[derive(Debug, Clone)]
@@ -110,6 +112,7 @@ impl Machine {
         match command {
             Command::Identify => Outcome::Identify,
             Command::DeviceInfo => Outcome::Reply(device_info.to_result()),
+            Command::ScanWifi => Outcome::ScanWifi,
             Command::WifiSettings { ssid, password } => {
                 if self.state != State::Authorized {
                     self.error = Error::NotAuthorized;
@@ -260,6 +263,16 @@ mod tests {
             Outcome::Reply(bytes) => assert_eq!(bytes, info().to_result()),
             other => panic!("{other:?}"),
         }
+        assert_eq!(m.state(), State::AuthorizationRequired);
+    }
+
+    #[test]
+    fn scan_never_needs_authorization() {
+        let mut m = Machine::new(true, TIMEOUT);
+        assert_eq!(
+            m.handle_packet(&[0x04, 0, 0x04], &info()),
+            Outcome::ScanWifi
+        );
         assert_eq!(m.state(), State::AuthorizationRequired);
     }
 

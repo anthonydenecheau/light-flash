@@ -1,5 +1,5 @@
 //! Thread réseau : possède le driver Wi-Fi, applique la politique de reconnexion
-//! (`light_core::reconnect::Policy`), exécute les demandes de connexion du provisioning et
+//! (`light_core::reconnect::Policy`), exécute les demandes du provisioning (connexion, scan) et
 //! journalise les événements. La station est retentée avec un délai croissant ; après 90 s sans
 //! connexion, le point d'accès de secours est démarré et la station retentée toutes les 2 minutes.
 
@@ -21,13 +21,16 @@ use std::{
     time::{Duration, Instant},
 };
 use storage::WifiCredentials;
-use wifi::AccessPoint;
+use wifi::{AccessPoint, ScanEntry};
 
 const TICK: Duration = Duration::from_secs(1);
 const STACK_SIZE: usize = 12 * 1024;
 /// Une tentative de connexion dure au plus ~17 s, plus l'attente d'un tick ou d'une tentative
 /// en cours : au-delà, le thread réseau est considéré bloqué.
 const CONNECT_REPLY_TIMEOUT: Duration = Duration::from_secs(45);
+/// Nombre maximal de réseaux renvoyés par un scan.
+const SCAN_MAX: usize = 20;
+const SCAN_REPLY_TIMEOUT: Duration = Duration::from_secs(25);
 
 /// Commandes des autres threads vers le thread réseau.
 pub enum NetworkCommand {
@@ -35,6 +38,10 @@ pub enum NetworkCommand {
     Connect {
         credentials: WifiCredentials,
         reply: Sender<Result<IpInfo, String>>,
+    },
+    /// Lister les réseaux à portée (provisioning).
+    Scan {
+        reply: Sender<Result<Vec<ScanEntry>, String>>,
     },
 }
 
@@ -60,6 +67,17 @@ impl NetworkHandle {
             .map_err(|_| "thread réseau arrêté".to_owned())?;
         result
             .recv_timeout(CONNECT_REPLY_TIMEOUT)
+            .map_err(|_| "pas de réponse du thread réseau".to_owned())?
+    }
+
+    /// Réseaux à portée, du plus fort au plus faible (scan bloquant de quelques secondes).
+    pub fn scan(&self) -> Result<Vec<ScanEntry>, String> {
+        let (reply, result) = mpsc::channel();
+        self.commands
+            .send(NetworkCommand::Scan { reply })
+            .map_err(|_| "thread réseau arrêté".to_owned())?;
+        result
+            .recv_timeout(SCAN_REPLY_TIMEOUT)
             .map_err(|_| "pas de réponse du thread réseau".to_owned())?
     }
 }
@@ -106,37 +124,47 @@ fn run(
     let now_ms = || start.elapsed().as_millis() as u64;
 
     loop {
-        while let Ok(NetworkCommand::Connect {
-            credentials: new_credentials,
-            reply,
-        }) = inbox.try_recv()
-        {
-            info!("provisioning : essai de « {} »", new_credentials.ssid);
-            let result = wifi::connect_sta(
-                &mut wifi,
-                sysloop.clone(),
-                &new_credentials.ssid,
-                &new_credentials.psk,
-            );
-            let now = now_ms();
-            match &result {
-                Ok(ip) => {
-                    info!("page de pilotage : http://{}/", ip.ip);
-                    credentials = Some(new_credentials);
-                    policy.set_has_credentials(true);
-                    policy.on_station_result(now, true);
-                }
-                Err(e) => {
-                    warn!(
-                        "provisioning : « {} » injoignable : {e}",
-                        new_credentials.ssid
+        while let Ok(command) = inbox.try_recv() {
+            match command {
+                NetworkCommand::Connect {
+                    credentials: new_credentials,
+                    reply,
+                } => {
+                    info!("provisioning : essai de « {} »", new_credentials.ssid);
+                    let result = wifi::connect_sta(
+                        &mut wifi,
+                        sysloop.clone(),
+                        &new_credentials.ssid,
+                        &new_credentials.psk,
                     );
-                    if policy.on_station_result(now, false) == Action::StartAccessPoint {
-                        start_access_point(&mut wifi, &sysloop, &ap);
+                    let now = now_ms();
+                    match &result {
+                        Ok(ip) => {
+                            info!("page de pilotage : http://{}/", ip.ip);
+                            credentials = Some(new_credentials);
+                            policy.set_has_credentials(true);
+                            policy.on_station_result(now, true);
+                        }
+                        Err(e) => {
+                            warn!(
+                                "provisioning : « {} » injoignable : {e}",
+                                new_credentials.ssid
+                            );
+                            if policy.on_station_result(now, false) == Action::StartAccessPoint {
+                                start_access_point(&mut wifi, &sysloop, &ap);
+                            }
+                        }
                     }
+                    let _ = reply.send(result.map_err(|e| e.to_string()));
+                }
+                NetworkCommand::Scan { reply } => {
+                    let result = wifi::scan(&mut wifi, SCAN_MAX).map_err(|e| e.to_string());
+                    if let Err(e) = &result {
+                        warn!("scan Wi-Fi impossible : {e}");
+                    }
+                    let _ = reply.send(result);
                 }
             }
-            let _ = reply.send(result.map_err(|e| e.to_string()));
         }
 
         if disconnect_request.swap(false, Ordering::Relaxed) {
