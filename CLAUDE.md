@@ -152,5 +152,6 @@ Vérifié le 2026-10-04 : flash du firmware BLE et de l'exemple `ws2812` OK (puc
 - Tester l'API depuis le PC : la lampe en station sur le réseau domestique (adresse dans le
   journal), puis `curl http://<ip>/api/light` ; en mode point d'accès le PC devrait quitter son
   propre Wi-Fi, préférer le téléphone.
-- La LED embarquée n'a jamais été vue allumée par l'utilisateur (2026-10-04) alors que les trames
-  partent : voir `BACKLOG.md` §6 et l'exemple `led_probe`.
+- La première carte avait une LED embarquée défectueuse (remplacée le 2026-10-04 par une carte
+  identique). Les exemples `led_probe` et `led_probe_original` de `rgb-led` servent de diagnostic
+  si le doute revient.
