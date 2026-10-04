@@ -112,6 +112,28 @@ Notes de mise en œuvre :
   liens réellement utiles.
 - [x] `make lint` = `cargo fmt --check` + `cargo clippy -D warnings` sur tout le workspace ;
   configuration rustfmt/clippy par défaut, pas de fichier dédié nécessaire.
+- [ ] **P1 — Mettre à jour les versions, après le premier build cible vérifié** (analyse du
+  2026-10-04). L'ensemble actuel est identique à la référence `esp-rs/std-training` (connu bon) ;
+  l'ensemble « dernier » est cohérent entre lui (`esp32-nimble 0.13` exige `esp-idf-svc 0.53.0`).
+  La carte ESP32-C3 est supportée par toutes les versions ci-dessous, elle n'impose rien.
+
+  | Composant | Actuel | Dernier (2026-10-04) | Remarques |
+  |---|---|---|---|
+  | `esp-idf-svc` | 0.51.0 | 0.53.0 (2026-09-25) | MSRV 1.82 ; ESP-IDF 5.3 à 6.0 ; nouveaux variants `WifiEvent` à traiter ; API NVS modifiée ; wrappers NimBLE natifs (GAP/GATT) ; corrige l'advertising BLE sur C3 avec ESP-IDF ≥ 5.5 |
+  | `esp-idf-hal` | 0.45.2 | 0.47.0 | va avec svc 0.53 |
+  | `esp-idf-sys` | 0.36.1 | 0.38.1 (2026-09-16) | ESP-IDF < 5.3 déprécié ; 5.4/5.5 supportés, 6.0 « compatibilité de base » |
+  | `esp32-nimble` | 0.10.2 | 0.13.0 | exige svc 0.53.0 |
+  | `embuild` | 0.33.5 | 0.33.5 | à jour |
+  | `toml-cfg` | 0.1.3 | 0.2.0 | mineur |
+  | `rgb` | 0.8.53 | 0.8.53 | 0.8.92-rc est une pré-version, ne pas la prendre |
+  | ESP-IDF | v5.3.2 | v5.5.x (6.0 trop récent) | recompilation complète (15–30 min) |
+  | nightly | 2025-01-01 | nightly récent, **daté** | aucune date imposée par les crates (MSRV 1.82 satisfait) ; choisir la date du jour de la mise à jour et la figer |
+  | `espflash` | non installé | 4.6.0 | vérifier les options utilisées par le Makefile (`--chip`, `save-image --merge`) avec la CLI 4.x |
+
+  Ordre : 1) `make build-all` + `hardware-check` sur carte avec l'ensemble actuel pour valider
+  l'environnement ; 2) un commit dédié qui passe crates, ESP-IDF v5.5 et nightly ensemble, puis
+  corrige les ruptures d'API (`WifiEvent`, NVS) ; 3) re-valider sur carte. Ne pas mélanger cette
+  mise à jour avec une fonctionnalité.
 - [ ] Ne pas merger `feature/connect2Wifi` en l'état (décision §1) ; en extraire uniquement
   l'alignement sur `esp-idf-svc 0.51`, puis garder la branche comme référence pour un éventuel
   repli SoftAP. Ne pas laisser deux `main.rs` incompatibles vivre en parallèle.
